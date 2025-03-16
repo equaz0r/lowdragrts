@@ -89,4 +89,50 @@ The following TypeScript compilation errors need to be resolved:
 - The selection box persistence issue needs investigation
 - Command visualization arrows need repositioning
 - Unit models need redesign for better visual distinction
-- Type safety needs improvement across the codebase 
+- Type safety needs improvement across the codebase
+
+## Addendum (Latest Status)
+
+### Fixed Issues
+1. Resolved TypeScript compilation errors in Game class:
+   - Fixed uninitialized properties using non-null assertions
+   - Corrected ControlMode.UNIT to ControlMode.UNIT_CONTROL
+   - Fixed updateSelectedUnitsInfo by using correct GameUI method
+   - Fixed unterminated template literal in onUnitSelected
+
+### Remaining Issues
+1. Projectile.ts:
+   - Property 'trail' needs initialization
+   - Property 'trailPositions' needs initialization
+
+2. GameUI.ts:
+   - Type mismatch between HTMLStyleElement and string
+   - Incorrect Node type handling in DOM manipulation
+   - TextContent property access on string type
+
+3. HelpDialog.ts:
+   - Property 'dialog' needs initialization
+
+4. Unit.ts:
+   - Constructor argument mismatches
+   - Missing showCommand property on CommandVisualizer
+   - Material property access issues
+   - Type safety issue with Unit | null in combat handling
+
+5. UnitManager.ts:
+   - Constructor argument count mismatch
+   - Type issues in arithmetic operations with selection coordinates
+
+### Next Steps
+1. Fix remaining TypeScript errors in order:
+   - Initialize Projectile properties
+   - Correct GameUI DOM manipulation types
+   - Initialize HelpDialog properties
+   - Fix Unit class constructor and method signatures
+   - Resolve UnitManager type safety issues
+
+2. Continue with planned features:
+   - Enhanced unit models with distinct shapes
+   - Improved command visualization
+   - Better selection and hover feedback
+   - Clearer UI mode indicators 
