@@ -37,13 +37,41 @@ export class CommandVisuals {
     }
 
     private createAttackMarker(): THREE.Group {
-        // Similar to moveArrow but red
-        // ... implementation ...
+        const group = new THREE.Group();
+        const geometry = new THREE.RingGeometry(1, 1.2, 32);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+        });
+        const ring = new THREE.Mesh(geometry, material);
+        ring.rotation.x = -Math.PI / 2;
+        group.add(ring);
+        return group;
     }
 
     private createTargetCrosshair(): THREE.Group {
-        // Create targeting crosshair
-        // ... implementation ...
+        const group = new THREE.Group();
+        const lineGeometry = new THREE.BufferGeometry();
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        const size = 1;
+        const points = [
+            new THREE.Vector3(-size, 0, 0),
+            new THREE.Vector3(size, 0, 0),
+            new THREE.Vector3(0, 0, -size),
+            new THREE.Vector3(0, 0, size)
+        ];
+
+        lineGeometry.setFromPoints(points);
+        const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+        group.add(lines);
+        return group;
     }
 
     public updateMoveCommand(start: THREE.Vector3, end: THREE.Vector3, speed: number): void {
@@ -58,8 +86,10 @@ export class CommandVisuals {
         this.moveArrow.lookAt(end);
         
         // Fade out based on distance
-        const material = (this.moveArrow.children[0].material as THREE.Material);
-        material.opacity = Math.max(0.2, 1 - (length / 50));
+        const mesh = this.moveArrow.children[0] as THREE.Mesh;
+        if (mesh && mesh.material instanceof THREE.Material) {
+            mesh.material.opacity = Math.max(0.2, 1 - (length / 50));
+        }
     }
 
     // ... other methods

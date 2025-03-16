@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { WorldManager } from '../voxel/WorldManager';
 import { CommandVisuals } from './CommandVisuals';
-import { Projectile } from '../projectiles/Projectile';
-import { ProjectileManager, ProjectileConfig } from '../combat/ProjectileManager';
+import { Projectile, ProjectileConfig } from '../combat/Projectile';
+import { ProjectileManager } from '../combat/ProjectileManager';
 import { CommandVisualizer, CommandType } from './CommandVisualizer';
 
 export enum UnitType {
@@ -20,49 +20,57 @@ export interface UnitStats {
     supply: number;       // Supply cost
     attackRange: number;
     attackDamage: number;
-    attackSpeed: number;
+    attackSpeed: number; // attacks per second
     projectileSpeed: number;
 }
 
-export class Unit {
-    protected mesh: THREE.Group;
-    protected position: THREE.Vector3;
-    protected rotation: THREE.Euler;
+export class Unit extends THREE.Object3D {
+    public readonly unitId: number;
+    public readonly unitType: UnitType;
+    private mesh: THREE.Group;
+    private selected: boolean;
+    private scene: THREE.Scene;
+
+    // Make all THREE.Object3D properties public to match parent class
+    public declare position: THREE.Vector3;
+    public declare rotation: THREE.Euler;
+    public declare scale: THREE.Vector3;
+    public declare matrix: THREE.Matrix4;
+    public declare matrixWorld: THREE.Matrix4;
+
     protected velocity: THREE.Vector3;
     protected targetPosition: THREE.Vector3 | null;
-    protected selected: boolean;
     protected health: number;
     protected stats: UnitStats;
-    protected type: UnitType;
     protected worldManager: WorldManager;
     protected target: Unit | null = null;
     protected lastAttackTime: number = 0;
     protected commandVisuals: CommandVisuals;
     protected projectileManager?: ProjectileManager;
-    private static nextId: number = 0;
-    private id: number;
     private commandVisualizer: CommandVisualizer;
 
-    constructor(type: UnitType, position: THREE.Vector3, worldManager: WorldManager, commandVisualizer: CommandVisualizer) {
-        this.id = Unit.nextId++;
-        this.commandVisualizer = commandVisualizer;
-        this.type = type;
-        this.position = position.clone();
+    constructor(id: number, type: UnitType, scene: THREE.Scene) {
+        super();
+        this.unitId = id;
+        this.unitType = type;
+        this.scene = scene;
+        this.selected = false;
+        this.mesh = this.createMesh();
+        this.add(this.mesh);
+        this.position = new THREE.Vector3();
         this.rotation = new THREE.Euler();
         this.velocity = new THREE.Vector3();
         this.targetPosition = null;
-        this.selected = false;
-        this.worldManager = worldManager;
+        this.worldManager = new WorldManager();
         this.stats = this.getDefaultStats();
         this.health = this.stats.maxHealth;
-
-        this.mesh = this.createMesh();
-        this.updateMeshPosition();
+        this.projectileManager = new ProjectileManager();
         this.commandVisuals = new CommandVisuals();
+        this.commandVisualizer = new CommandVisualizer();
     }
 
     protected getDefaultStats(): UnitStats {
-        switch (this.type) {
+        switch (this.unitType) {
             case UnitType.BASIC_ROBOT:
                 return {
                     maxHealth: 100,
@@ -73,7 +81,7 @@ export class Unit {
                     attackRange: 10,
                     attackDamage: 10,
                     attackSpeed: 1,
-                    projectileSpeed: 5
+                    projectileSpeed: 20
                 };
             case UnitType.HARVESTER:
                 return {
@@ -116,30 +124,71 @@ export class Unit {
 
     protected createMesh(): THREE.Group {
         const group = new THREE.Group();
+        
+        // Create base for all units
+        const baseGeometry = new THREE.BoxGeometry(2, 0.5, 2);
+        const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = 0.25;
+        group.add(base);
 
-        // Create basic unit mesh
-        const geometry = new THREE.BoxGeometry(
-            this.stats.size.x,
-            this.stats.size.y,
-            this.stats.size.z
-        );
-        const material = new THREE.MeshPhongMaterial({ color: 0x3366cc });
-        const mainBody = new THREE.Mesh(geometry, material);
-        mainBody.castShadow = true;
-        mainBody.receiveShadow = true;
-        group.add(mainBody);
-
-        // Add selection indicator (hidden by default)
-        const selectionRing = this.createSelectionRing();
-        selectionRing.visible = false;
-        group.add(selectionRing);
-
-        // Add health bar
-        const healthBar = this.createHealthBar();
-        healthBar.position.y = this.stats.size.y + 1;
-        group.add(healthBar);
+        // Add unit-specific mesh
+        switch (this.unitType) {
+            case UnitType.BASIC_ROBOT:
+                this.addRobotMesh(group);
+                break;
+            case UnitType.HARVESTER:
+                this.addHarvesterMesh(group);
+                break;
+            case UnitType.BUILDER:
+                this.addBuilderMesh(group);
+                break;
+        }
 
         return group;
+    }
+
+    private addRobotMesh(group: THREE.Group): void {
+        const material = new THREE.MeshPhongMaterial({ color: 0x3366cc });
+        
+        // Body
+        const bodyGeometry = new THREE.BoxGeometry(1, 1.5, 1);
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = 1.25;
+        group.add(body);
+
+        // Head
+        const headGeometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = 2.3;
+        group.add(head);
+    }
+
+    private addHarvesterMesh(group: THREE.Group): void {
+        const material = new THREE.MeshPhongMaterial({ color: 0xcc6633 });
+        
+        // Main body
+        const bodyGeometry = new THREE.BoxGeometry(3, 1.5, 2);
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = 1.25;
+        group.add(body);
+
+        // Cab
+        const cabGeometry = new THREE.BoxGeometry(1.5, 1.2, 1.8);
+        const cab = new THREE.Mesh(cabGeometry, material);
+        cab.position.set(-0.75, 2, 0);
+        group.add(cab);
+    }
+
+    private addBuilderMesh(group: THREE.Group): void {
+        const material = new THREE.MeshPhongMaterial({ color: 0x33cc33 });
+        
+        // Pyramid body
+        const pyramidGeometry = new THREE.ConeGeometry(1, 2, 4);
+        const pyramid = new THREE.Mesh(pyramidGeometry, material);
+        pyramid.position.y = 1.5;
+        pyramid.rotation.y = Math.PI / 4;
+        group.add(pyramid);
     }
 
     protected createSelectionRing(): THREE.Mesh {
@@ -188,9 +237,8 @@ export class Unit {
         if (this.targetPosition) {
             this.moveToTarget(delta);
         }
-        this.updateMeshPosition();
+        this.updateCombat(delta);
         this.updateHealthBar();
-        this.updateCombat(Date.now());
     }
 
     protected moveToTarget(delta: number): void {
@@ -198,6 +246,12 @@ export class Unit {
 
         const direction = this.targetPosition.clone().sub(this.position);
         const distance = direction.length();
+
+        console.log('Moving unit:', {
+            currentPosition: this.position.clone(),
+            targetPosition: this.targetPosition.clone(),
+            distance: distance
+        });
 
         if (distance < 0.1) {
             this.targetPosition = null;
@@ -207,25 +261,30 @@ export class Unit {
 
         direction.normalize();
         
-        // Check ground height at new position
-        const nextPosition = this.position.clone().add(direction.multiplyScalar(this.stats.moveSpeed * delta));
-        const groundHeight = this.worldManager.getHeightAt(nextPosition.x, nextPosition.z);
+        // Calculate next position
+        const nextX = this.position.x + direction.x * this.stats.moveSpeed * delta;
+        const nextZ = this.position.z + direction.z * this.stats.moveSpeed * delta;
         
+        // Get ground height at new position
+        const groundHeight = this.worldManager.getHeightAt(nextX, nextZ);
+        
+        console.log('Ground height check:', {
+            nextX, 
+            nextZ, 
+            groundHeight
+        });
+
         if (groundHeight !== undefined) {
-            nextPosition.y = groundHeight + (this.stats.size.y / 2); // Keep unit on ground
-            this.position.copy(nextPosition);
+            // Move unit
+            this.position.x = nextX;
+            this.position.z = nextZ;
+            // Keep unit on ground, offset by half its height
+            this.position.y = groundHeight + (this.stats.size.y / 2);
+            
+            console.log('Updated position:', this.position.clone());
         }
 
-        // Update rotation
-        const targetRotation = Math.atan2(direction.x, direction.z);
-        const currentRotation = this.rotation.y;
-        
-        const rotationDiff = Math.atan2(
-            Math.sin(targetRotation - currentRotation),
-            Math.cos(targetRotation - currentRotation)
-        );
-        
-        this.rotation.y += rotationDiff * this.stats.turnSpeed * delta;
+        this.updateMeshPosition();
     }
 
     protected updateMeshPosition(): void {
@@ -256,7 +315,7 @@ export class Unit {
     public setTarget(target: THREE.Vector3): void {
         this.targetPosition = target;
         this.commandVisualizer.showCommand(
-            this.id,
+            this.unitId,
             CommandType.MOVE,
             this.position,
             target,
@@ -266,8 +325,11 @@ export class Unit {
 
     public setSelected(selected: boolean): void {
         this.selected = selected;
-        const selectionRing = this.mesh.children[1];
-        selectionRing.visible = selected;
+        // Update visual feedback for selection
+        if (this.mesh) {
+            const material = this.mesh.children[0].material as THREE.MeshPhongMaterial;
+            material.emissive.setHex(selected ? 0x333333 : 0x000000);
+        }
     }
 
     public getMesh(): THREE.Group {
@@ -295,31 +357,35 @@ export class Unit {
 
     public attack(target: Unit): void {
         this.target = target;
-        this.commandVisualizer.showCommand(
-            this.id,
-            CommandType.ATTACK,
-            this.position,
-            target.getPosition()
-        );
+        // Show attack command visualization
+        if (this.commandVisualizer) {
+            this.commandVisualizer.showCommand(
+                this.unitId,
+                CommandType.ATTACK,
+                this.position,
+                target.getPosition()
+            );
+        }
     }
 
-    protected updateCombat(time: number): void {
+    protected updateCombat(delta: number): void {
         if (this.target) {
             const distance = this.position.distanceTo(this.target.getPosition());
             
             if (distance <= this.stats.attackRange) {
-                if (time - this.lastAttackTime >= 1000 / this.stats.attackSpeed) {
-                    this.fireProjectile(this.target);
-                    this.lastAttackTime = time;
+                const currentTime = performance.now();
+                if (currentTime - this.lastAttackTime >= 1000 / this.stats.attackSpeed) {
+                    this.fireProjectile();
+                    this.lastAttackTime = currentTime;
                 }
             } else {
-                // Move towards target
+                // Move towards target if out of range
                 this.setTarget(this.target.getPosition());
             }
         }
     }
 
-    protected fireProjectile(target: Unit): void {
+    protected fireProjectile(): void {
         if (!this.projectileManager) return;
 
         const projectileConfig: ProjectileConfig = {
@@ -330,7 +396,7 @@ export class Unit {
             trailLength: 10
         };
 
-        this.projectileManager.createProjectile(this, target, projectileConfig);
+        this.projectileManager.createProjectile(this, this.target, projectileConfig);
     }
 
     public takeDamage(amount: number): void {
@@ -345,5 +411,40 @@ export class Unit {
         // Create explosion effect
         // Remove from game
         this.dispose();
+    }
+
+    public getType(): string {
+        return this.unitType;
+    }
+
+    public stop(): void {
+        this.targetPosition = null;
+        this.target = null;
+        this.velocity.set(0, 0, 0);
+    }
+
+    public hold(): void {
+        this.stop();
+        // Additional hold position logic can be added here
+    }
+
+    public cancelAction(): void {
+        this.stop();
+        // Additional cleanup can be added here
+    }
+
+    public getBoundingBox(): THREE.Box3 {
+        const box = new THREE.Box3();
+        box.setFromObject(this.mesh);
+        return box;
+    }
+
+    public getSize(): THREE.Vector3 {
+        const box = this.getBoundingBox();
+        return box.getSize(new THREE.Vector3());
+    }
+
+    public getId(): number {
+        return this.unitId;
     }
 } 

@@ -8,26 +8,45 @@ export class GameUI {
     private hotkeyDisplay: HTMLDivElement;
     private selectedUnitsInfo: HTMLDivElement;
     private cursorCoordinates: HTMLDivElement;
+    private actionIndicator: HTMLDivElement;
+    private cursorStyle: string;
+    private currentMode: string;
 
     constructor() {
-        this.createUI();
+        // Initialize all properties in constructor
+        this.container = document.createElement('div');
+        this.controlBar = document.createElement('div');
+        this.statusBar = document.createElement('div');
+        this.modeIndicator = document.createElement('div');
+        this.hotkeyDisplay = document.createElement('div');
+        this.selectedUnitsInfo = document.createElement('div');
+        this.cursorCoordinates = document.createElement('div');
+        this.actionIndicator = document.createElement('div');
+        this.cursorStyle = 'default';
+        this.currentMode = 'CAMERA';
+
+        this.setupUI();
     }
 
-    private createUI(): void {
-        this.container = document.createElement('div');
+    private setupUI(): void {
+        // Setup container
+        this.container.style.position = 'absolute';
+        this.container.style.top = '0';
+        this.container.style.left = '0';
+        this.container.style.width = '100%';
+        this.container.style.height = '100%';
         document.body.appendChild(this.container);
 
-        // Create status bar (top)
-        this.createStatusBar();
-
-        // Create control bar (bottom)
-        this.createControlBar();
-
-        // Create hotkey display (top-right)
-        this.createHotkeyDisplay();
-
-        // Create cursor coordinates display (bottom-right)
-        this.createCursorCoordinates();
+        // Setup mode indicator
+        this.modeIndicator.style.position = 'absolute';
+        this.modeIndicator.style.top = '10px';
+        this.modeIndicator.style.left = '10px';
+        this.modeIndicator.style.padding = '5px';
+        this.modeIndicator.style.backgroundColor = 'rgba(0,0,0,0.7)';
+        this.modeIndicator.style.color = 'white';
+        this.container.appendChild(this.modeIndicator);
+        
+        this.updateModeIndicator();
     }
 
     private createStatusBar(): void {
@@ -166,20 +185,48 @@ export class GameUI {
         this.container.appendChild(this.cursorCoordinates);
     }
 
-    public updateMode(mode: ControlMode): void {
-        this.modeIndicator.textContent = `Mode: ${mode === ControlMode.CAMERA ? 'Camera Control' : 'Unit Control'}`;
-        this.modeIndicator.style.color = mode === ControlMode.CAMERA ? '#66ccff' : '#66ff66';
+    private createCursorStyles(): void {
+        this.cursorStyle = document.createElement('style');
+        document.head.appendChild(this.cursorStyle);
+        this.updateCursorStyle('default');
+    }
+
+    public updateModeIndicator(): void {
+        this.modeIndicator.textContent = `Mode: ${this.currentMode}`;
+    }
+
+    public setMode(mode: string): void {
+        this.currentMode = mode;
+        this.updateModeIndicator();
+    }
+
+    public updateAction(action: string | null): void {
+        if (action) {
+            this.actionIndicator.textContent = `ACTION: ${action.toUpperCase()}`;
+            this.actionIndicator.style.display = 'block';
+            this.updateCursorStyle(action === 'attack' ? 'crosshair' : 'pointer');
+        } else {
+            this.actionIndicator.style.display = 'none';
+            this.updateCursorStyle('default');
+        }
+    }
+
+    private updateCursorStyle(cursorType: string): void {
+        this.cursorStyle.textContent = `
+            body { 
+                cursor: ${cursorType} !important;
+            }
+        `;
     }
 
     public updateSelectedUnits(count: number, types: Map<string, number>): void {
         let text = `Selected: ${count} unit${count !== 1 ? 's' : ''}`;
         if (count > 0) {
-            text += ' (';
-            const typeStrings = [];
+            const typeStrings: string[] = [];
             types.forEach((count, type) => {
                 typeStrings.push(`${count} ${type}`);
             });
-            text += typeStrings.join(', ') + ')';
+            text += ` (${typeStrings.join(', ')})`;
         }
         this.selectedUnitsInfo.textContent = text;
     }

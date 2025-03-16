@@ -12,8 +12,10 @@ import { GameUI } from './engine/ui/GameUI';
 import { ProjectileManager } from './engine/combat/ProjectileManager';
 import { CommandVisualizer } from './engine/units/CommandVisualizer';
 import { InputManager, ControlMode } from './engine/controls/InputManager';
+import { GameInterface } from './engine/interfaces/GameInterface';
+import { Unit } from './engine/units/Unit';
 
-export class Game {
+export class Game implements GameInterface {
     private scene: THREE.Scene;
     private camera: THREE.PerspectiveCamera;
     private renderer: THREE.WebGLRenderer;
@@ -35,6 +37,7 @@ export class Game {
     private commandVisualizer: CommandVisualizer;
     private inputManager: InputManager;
     private currentAction: string | null = null;
+    private controlMode: ControlMode = ControlMode.UNIT_CONTROL;
 
     constructor() {
         this.scene = new THREE.Scene();
@@ -174,6 +177,7 @@ export class Game {
                 this.isSelecting = true;
                 this.selectionStart.set(event.clientX, event.clientY);
                 this.unitManager.startSelection(event.clientX, event.clientY);
+                console.log('Started selection'); // Debug log
             }
         }
     }
@@ -199,34 +203,37 @@ export class Game {
             );
             this.unitManager.updateSelection(event.clientX, event.clientY);
         }
+
+        this.gameUI.setMode(this.controlMode);
     }
 
     private onMouseUp(event: MouseEvent): void {
         if (this.inputManager.getMode() === ControlMode.UNIT_CONTROL) {
-            if (event.button === 0) {
+            if (event.button === 0) { // Left click
                 this.isSelecting = false;
-                this.selectionBox.hide();
                 this.unitManager.endSelection(this.camera);
                 this.updateSelectedUnitsInfo();
-            } else if (event.button === 2) {
-                this.handleRightClick(event);
-            }
-        }
-    }
-
-    private handleRightClick(event: MouseEvent): void {
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
-        
-        if (intersects.length > 0) {
-            const target = intersects[0].point;
-            if (this.currentAction === 'attack') {
-                const targetUnit = this.unitManager.getUnitAtPosition(target);
-                if (targetUnit) {
-                    this.unitManager.attackTarget(targetUnit);
+                console.log('Ended selection'); // Debug log
+            } else if (event.button === 2) { // Right click
+                console.log('Right click - issuing command'); // Debug log
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+                
+                if (intersects.length > 0) {
+                    const target = intersects[0].point;
+                    console.log('Move target:', target); // Debug log
+                    
+                    if (this.currentAction === 'attack') {
+                        const targetUnit = this.unitManager.getUnitAtPosition(target);
+                        if (targetUnit) {
+                            this.unitManager.attackTarget(targetUnit);
+                            console.log('Attacking unit'); // Debug log
+                        }
+                    } else {
+                        this.unitManager.moveSelectedUnits(target);
+                        console.log('Moving units'); // Debug log
+                    }
                 }
-            } else {
-                this.unitManager.moveSelectedUnits(target);
             }
         }
     }
@@ -275,10 +282,16 @@ export class Game {
 
     // Public methods for InputManager
     public updateControlMode(mode: ControlMode): void {
-        this.controls.enabled = mode === ControlMode.CAMERA;
-        this.gameUI.updateMode(mode);
+        console.log("Switching to mode:", mode);
+        this.controlMode = mode;
+        if (mode === ControlMode.CAMERA) {
+            this.unitManager.clearSelection();
+        }
+        this.gameUI.setMode(ControlMode[mode]);
+        this.gameUI.updateModeIndicator();
     }
 
+    // Implement GameInterface methods
     public getSelectedUnitIds(): number[] {
         return this.unitManager.getSelectedUnits().map(unit => unit.getId());
     }
@@ -290,10 +303,12 @@ export class Game {
 
     public setCurrentAction(action: string): void {
         this.currentAction = action;
+        this.gameUI.updateAction(action);
     }
 
     public cancelCurrentAction(): void {
         this.currentAction = null;
+        this.gameUI.updateAction(null);
         this.unitManager.cancelCurrentAction();
     }
 
@@ -308,7 +323,16 @@ export class Game {
     public toggleHelp(): void {
         this.gameUI.toggleHotkeyDisplay();
     }
-}
 
-// Start the game
-new Game();
+    private setControlMode(mode: ControlMode): void {
+        this.controlMode = mode;
+        if (mode === ControlMode.CAMERA) {
+            this.unitManager.clearSelection();
+        }
+        // Convert ControlMode to string
+        this.gameUI.setMode(ControlMode[mode]);
+    }
+
+    private onUnitSelected(unit: Unit): void {
+        // Use getId() method
+        console.log(`

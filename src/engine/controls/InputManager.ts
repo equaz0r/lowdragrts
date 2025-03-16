@@ -1,16 +1,18 @@
+import { GameInterface } from '../interfaces/GameInterface';
+
 export enum ControlMode {
     CAMERA,
     UNIT_CONTROL
 }
 
 export class InputManager {
-    private game: Game;
+    private game: GameInterface;
     private mode: ControlMode = ControlMode.UNIT_CONTROL;
     private controlGroups: Map<number, Set<number>> = new Map(); // Key: group number, Value: Set of unit IDs
     private currentAction: string | null = null;
     private keyState: Map<string, boolean> = new Map();
 
-    constructor(game: Game) {
+    constructor(game: GameInterface) {
         this.game = game;
         this.setupEventListeners();
     }
@@ -22,6 +24,8 @@ export class InputManager {
 
     private handleKeyDown(event: KeyboardEvent): void {
         if (event.repeat) return;
+        
+        console.log('Key pressed:', event.code); // Debug log
         
         this.keyState.set(event.code, true);
         

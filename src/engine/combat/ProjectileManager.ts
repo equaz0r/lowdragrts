@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Projectile, ProjectileConfig } from './Projectile';
 import { Unit } from '../units/Unit';
 
+export { ProjectileConfig };
+
 export class ProjectileManager {
     private projectiles: Projectile[] = [];
     private scene: THREE.Scene;

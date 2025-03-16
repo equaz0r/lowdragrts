@@ -195,15 +195,42 @@ export class WorldManager {
     }
 
     public getHeightAt(x: number, z: number): number | undefined {
+        // Convert world coordinates to chunk coordinates
         const chunkX = Math.floor(x / CHUNK_SIZE);
         const chunkZ = Math.floor(z / CHUNK_SIZE);
         
+        console.log('Getting height at:', {
+            worldX: x,
+            worldZ: z,
+            chunkX,
+            chunkZ
+        });
+        
+        // Convert to local coordinates within chunk
+        const localX = Math.floor(x) % CHUNK_SIZE;
+        const localZ = Math.floor(z) % CHUNK_SIZE;
+        
+        console.log('Local coordinates:', {
+            localX,
+            localZ
+        });
+
+        // Search from top to bottom for first non-air block
         for (let y = 4 * CHUNK_SIZE - 1; y >= 0; y--) {
-            const voxel = this.getVoxel(x, y, z);
-            if (voxel !== VoxelType.AIR) {
-                return y + 1;
+            const chunk = this.getChunk(chunkX, Math.floor(y / CHUNK_SIZE), chunkZ);
+            if (chunk) {
+                const voxel = chunk.getVoxel(
+                    localX >= 0 ? localX : CHUNK_SIZE + localX,
+                    y % CHUNK_SIZE,
+                    localZ >= 0 ? localZ : CHUNK_SIZE + localZ
+                );
+                if (voxel !== VoxelType.AIR) {
+                    console.log('Found ground at height:', y + 1);
+                    return y + 1;
+                }
             }
         }
-        return undefined;
+        console.log('No ground found, returning 0');
+        return 0;
     }
 } 

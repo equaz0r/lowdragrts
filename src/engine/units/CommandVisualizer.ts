@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Unit } from './Unit';
 
 export enum CommandType {
     MOVE,
@@ -8,103 +9,49 @@ export enum CommandType {
 
 export class CommandVisualizer {
     private scene: THREE.Scene;
-    private moveArrows: Map<number, THREE.Group> = new Map(); // Unit ID to arrow mapping
+    private moveArrows: Map<number, THREE.Object3D>;
     private targetMarkers: Map<number, THREE.Group> = new Map();
     private crosshairs: Map<number, THREE.Group> = new Map();
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
+        this.moveArrows = new Map();
     }
 
-    public showCommand(unitId: number, commandType: CommandType, start: THREE.Vector3, end: THREE.Vector3, speed: number = 1): void {
-        switch (commandType) {
-            case CommandType.MOVE:
-                this.showMoveCommand(unitId, start, end, speed);
-                break;
-            case CommandType.ATTACK:
-                this.showAttackCommand(unitId, start, end);
-                break;
-        }
-    }
+    public showMoveCommand(unit: Unit, target: THREE.Vector3): void {
+        const unitPos = unit.getPosition();
+        const direction = target.clone().sub(unitPos).normalize();
 
-    private showMoveCommand(unitId: number, start: THREE.Vector3, end: THREE.Vector3, speed: number): void {
-        // Remove existing arrow if present
-        this.removeMoveArrow(unitId);
+        // Create arrow
+        const arrow = new THREE.Group();
+        
+        // Arrow shaft
+        const shaftGeometry = new THREE.BoxGeometry(0.2, 0.2, 1);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.7
+        });
+        const shaft = new THREE.Mesh(shaftGeometry, material);
+        arrow.add(shaft);
 
-        const arrow = this.createMoveArrow(speed);
-        this.moveArrows.set(unitId, arrow);
-        this.scene.add(arrow);
+        // Arrow head
+        const headGeometry = new THREE.ConeGeometry(0.3, 0.5, 8);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.z = 0.75;
+        head.rotation.x = -Math.PI / 2;
+        arrow.add(head);
 
         // Position and rotate arrow
-        this.updateArrowTransform(arrow, start, end, speed);
+        arrow.position.copy(unitPos);
+        arrow.lookAt(target);
 
-        // Fade out arrow after 2 seconds
-        setTimeout(() => this.fadeOutArrow(unitId), 2000);
-    }
+        // Add to scene and store reference
+        this.scene.add(arrow);
+        this.moveArrows.set(unit.getId(), arrow);
 
-    private createMoveArrow(speed: number): THREE.Group {
-        const group = new THREE.Group();
-
-        // Create glowing arrow head
-        const arrowHead = new THREE.ConeGeometry(0.3, 1, 8);
-        const arrowMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
-            transparent: true,
-            opacity: 0.8
-        });
-        const arrow = new THREE.Mesh(arrowHead, arrowMaterial);
-        arrow.rotation.x = -Math.PI / 2;
-
-        // Create arrow trail
-        const trailGeometry = new THREE.BufferGeometry();
-        const trailMaterial = new THREE.LineBasicMaterial({
-            color: 0xffff00,
-            transparent: true,
-            opacity: 0.5
-        });
-
-        const points = [
-            new THREE.Vector3(0, 0, -2),
-            new THREE.Vector3(0, 0, 0)
-        ];
-        trailGeometry.setFromPoints(points);
-        const trail = new THREE.Line(trailGeometry, trailMaterial);
-
-        // Add glow effect
-        const glowMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                color: { value: new THREE.Color(0xffff00) },
-                viewVector: { value: new THREE.Vector3() }
-            },
-            vertexShader: `
-                uniform vec3 viewVector;
-                varying float intensity;
-                void main() {
-                    vec3 vNormal = normalize(normalMatrix * normal);
-                    vec3 vNormalized = normalize(viewVector);
-                    intensity = pow(1.0 - abs(dot(vNormal, vNormalized)), 2.0);
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 color;
-                varying float intensity;
-                void main() {
-                    gl_FragColor = vec4(color, 0.5 * intensity);
-                }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending
-        });
-
-        const glowGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-
-        group.add(arrow);
-        group.add(trail);
-        group.add(glow);
-
-        return group;
+        // Remove after delay
+        setTimeout(() => this.removeMoveCommand(unit.getId()), 2000);
     }
 
     private showAttackCommand(unitId: number, start: THREE.Vector3, end: THREE.Vector3): void {
@@ -174,57 +121,10 @@ export class CommandVisualizer {
         return group;
     }
 
-    private updateArrowTransform(arrow: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, speed: number): void {
-        const direction = end.clone().sub(start);
-        const length = direction.length();
-        
-        arrow.position.copy(start);
-        arrow.lookAt(end);
-        
-        // Scale arrow based on speed
-        arrow.scale.z = Math.min(length, speed * 2);
-        
-        // Update trail length
-        const trail = arrow.children[1] as THREE.Line;
-        const trailGeometry = trail.geometry as THREE.BufferGeometry;
-        const points = [
-            new THREE.Vector3(0, 0, -length),
-            new THREE.Vector3(0, 0, 0)
-        ];
-        trailGeometry.setFromPoints(points);
-    }
-
-    private fadeOutArrow(unitId: number): void {
-        const arrow = this.moveArrows.get(unitId);
-        if (!arrow) return;
-
-        const fadeOut = () => {
-            arrow.children.forEach(child => {
-                if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
-                    const material = child.material as THREE.Material;
-                    if (material.opacity > 0.01) {
-                        material.opacity *= 0.9;
-                        requestAnimationFrame(fadeOut);
-                    } else {
-                        this.removeMoveArrow(unitId);
-                    }
-                }
-            });
-        };
-
-        fadeOut();
-    }
-
-    private removeMoveArrow(unitId: number): void {
+    private removeMoveCommand(unitId: number): void {
         const arrow = this.moveArrows.get(unitId);
         if (arrow) {
             this.scene.remove(arrow);
-            arrow.children.forEach(child => {
-                if (child instanceof THREE.Mesh) {
-                    child.geometry.dispose();
-                    (child.material as THREE.Material).dispose();
-                }
-            });
             this.moveArrows.delete(unitId);
         }
     }
@@ -271,7 +171,7 @@ export class CommandVisualizer {
     }
 
     public dispose(): void {
-        [...this.moveArrows.keys()].forEach(id => this.removeMoveArrow(id));
-        [...this.targetMarkers.keys()].forEach(id => this.removeAttackMarkers(id));
+        Array.from(this.moveArrows.keys()).forEach(id => this.removeMoveCommand(id));
+        Array.from(this.targetMarkers.keys()).forEach(id => this.removeAttackMarkers(id));
     }
 } 
