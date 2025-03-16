@@ -1,0 +1,30 @@
+{
+  "name": "lowdragrts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack",
+    "start": "webpack serve --open"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "@types/three": "^0.174.0",
+    "babel-loader": "^10.0.0",
+    "html-webpack-plugin": "^5.6.3",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.0"
+  },
+  "dependencies": {
+    "postprocessing": "^6.37.1",
+    "simplex-noise-esm": "^2.5.0-esm.0",
+    "three": "^0.174.0",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.2"
+  },
+  "description": ""
+}
