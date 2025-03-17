@@ -39,6 +39,9 @@ export class UnitManager {
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
         this.gameUI = gameUI;
+
+        // Store reference to UnitManager in scene for scrap collection
+        scene.userData.unitManager = this;
     }
 
     public createUnit(type: UnitType, position: THREE.Vector3): Unit {
@@ -199,27 +202,68 @@ export class UnitManager {
 
     private checkScrapCollection(): void {
         this.units.forEach(unit => {
-            const unitPosition = unit.getPosition();
-            
-            // Check each scrap pile
-            this.scrapPiles.forEach((pile, index) => {
-                const pilePosition = pile.position;
-                const distance = unitPosition.distanceTo(pilePosition);
-                
-                // If unit is close enough to collect scrap
+            this.scrapPiles.forEach((scrapPile, index) => {
+                const distance = unit.position.distanceTo(scrapPile.position);
                 if (distance < 2) {
-                    // Add scrap to counter
-                    this.scrapCount += 5; // Each pile gives 5 scrap
+                    // Collect scrap
+                    const scrapAmount = 5;
+                    this.scrapCount += scrapAmount;
                     
-                    // Remove scrap pile from scene
-                    this.scene.remove(pile);
-                    pile.traverse((child) => {
+                    // Create floating text
+                    const div = document.createElement('div');
+                    div.style.position = 'absolute';
+                    div.style.color = 'white';
+                    div.style.fontSize = '24px';
+                    div.style.fontWeight = 'bold';
+                    div.style.textShadow = '0 0 10px cyan';
+                    div.style.whiteSpace = 'nowrap';
+                    div.style.pointerEvents = 'none';
+                    div.style.zIndex = '1000';
+                    div.textContent = `+${scrapAmount}`;
+                    
+                    // Position text at unit's position
+                    const vector = unit.position.clone();
+                    vector.y += 2; // Offset above unit
+                    
+                    // Project 3D position to screen
+                    vector.project(this.scene.userData.camera);
+                    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                    const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                    
+                    div.style.left = `${x}px`;
+                    div.style.top = `${y}px`;
+                    div.style.transform = 'translate(-50%, -50%)';
+                    
+                    document.body.appendChild(div);
+                    
+                    // Animate text
+                    let opacity = 1;
+                    let offset = 0;
+                    const animate = () => {
+                        opacity -= 0.02;
+                        offset += 1;
+                        
+                        if (opacity > 0) {
+                            div.style.opacity = opacity.toString();
+                            div.style.top = `${y - offset}px`;
+                            requestAnimationFrame(animate);
+                        } else {
+                            document.body.removeChild(div);
+                        }
+                    };
+                    animate();
+                    
+                    // Remove scrap pile
+                    this.scene.remove(scrapPile);
+                    scrapPile.traverse((child) => {
                         if (child instanceof THREE.Mesh) {
-                            child.geometry.dispose();
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(material => material.dispose());
-                            } else {
+                            if (child.geometry) {
+                                child.geometry.dispose();
+                            }
+                            if (child.material instanceof THREE.Material) {
                                 child.material.dispose();
+                            } else if (Array.isArray(child.material)) {
+                                child.material.forEach(material => material.dispose());
                             }
                         }
                     });

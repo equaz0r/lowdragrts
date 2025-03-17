@@ -17,7 +17,7 @@ export class Projectile extends THREE.Object3D {
     private static readonly muzzleFlashGeometry = new THREE.PlaneGeometry(1, 1);
     private static readonly hitParticleGeometry = new THREE.BufferGeometry();
     private static readonly hitParticleMaterial = new THREE.PointsMaterial({
-        color: 0xffcc00,
+        color: 0xFF4500,
         size: 0.1,
         transparent: true,
         opacity: 0.8,
@@ -40,13 +40,13 @@ export class Projectile extends THREE.Object3D {
         this.source = source;
         this.target = target;
         this.config = {
-            size: 0.3,
-            color: 0xff0000,
-            trailLength: 10,
-            hitEffectSize: 1,
-            glowIntensity: 0.5,
+            size: 0.5,
+            color: 0xFF4500,
+            trailLength: 20,
+            hitEffectSize: 2,
+            glowIntensity: 1,
             particleCount: 50,
-            speed: 5,
+            speed: 30,
             damage: 10,
             ...config
         };
@@ -120,8 +120,9 @@ export class Projectile extends THREE.Object3D {
                 varying vec2 vUv;
                 void main() {
                     float alpha = 1.0 - vUv.y;
-                    alpha *= 0.5;
-                    gl_FragColor = vec4(color, alpha);
+                    alpha *= 0.7;
+                    vec3 glowColor = color * (1.0 + sin(time * 2.0) * 0.2);
+                    gl_FragColor = vec4(glowColor, alpha);
                 }
             `,
             transparent: true,
@@ -133,7 +134,8 @@ export class Projectile extends THREE.Object3D {
         return new THREE.MeshBasicMaterial({
             color: this.config.color,
             transparent: true,
-            opacity: 0
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
         });
     }
 
@@ -291,13 +293,13 @@ export class Projectile extends THREE.Object3D {
         this.source = source;
         this.target = target;
         this.config = {
-            size: 0.3,
-            color: 0xff0000,
-            trailLength: 10,
-            hitEffectSize: 1,
-            glowIntensity: 0.5,
+            size: 0.5,
+            color: 0xFF4500,
+            trailLength: 20,
+            hitEffectSize: 2,
+            glowIntensity: 1,
             particleCount: 50,
-            speed: 5,
+            speed: 30,
             damage: 10,
             ...config
         };

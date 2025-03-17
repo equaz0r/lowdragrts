@@ -23,9 +23,9 @@ export class DayNightCycle {
 
         // Add ambient light
         this.ambientLight = new THREE.HemisphereLight(
-            0x87CEEB, // Sky color
-            0x4B0082, // Ground color
-            0.5       // Intensity
+            0x404040, // Dark sky color
+            0x202020, // Dark ground color
+            0.5       // Increased base intensity
         );
         scene.add(this.ambientLight);
 
@@ -52,18 +52,9 @@ export class DayNightCycle {
 
         // Adjust light intensities based on time
         const dayIntensity = Math.sin(time * Math.PI * 2);
-        const intensity = Math.max(0, dayIntensity);
-        this.sun.intensity = intensity * 1.5;
-        this.ambientLight.intensity = 0.2 + (intensity * 0.3);
-
-        // Adjust sky color based on time
-        const skyColor = new THREE.Color();
-        if (dayIntensity > 0) {
-            skyColor.setHSL(0.6, 0.8, 0.3 + (dayIntensity * 0.4)); // Blue sky
-        } else {
-            skyColor.setHSL(0.6, 0.8, 0.1); // Dark blue night
-        }
-        this.ambientLight.groundColor.setHSL(0.1, 0.8, 0.1 + (dayIntensity * 0.2));
+        const intensity = Math.max(0.2, dayIntensity); // Minimum intensity of 0.2
+        this.sun.intensity = intensity * 1.0; // Increased maximum intensity
+        this.ambientLight.intensity = 0.3 + (intensity * 0.3); // Increased ambient light
     }
 
     public update(delta: number): void {

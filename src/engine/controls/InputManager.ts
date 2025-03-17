@@ -1,8 +1,8 @@
 import { GameInterface } from '../interfaces/GameInterface';
 
 export enum ControlMode {
-    CAMERA,
-    UNIT_CONTROL
+    UNIT_CONTROL = 'UNIT_CONTROL',
+    CAMERA = 'CAMERA'
 }
 
 export class InputManager {
@@ -11,6 +11,8 @@ export class InputManager {
     private controlGroups: Map<number, Set<number>> = new Map(); // Key: group number, Value: Set of unit IDs
     private currentAction: string | null = null;
     private keyState: Map<string, boolean> = new Map();
+    private keys: Set<string> = new Set();
+    private cameraPanSpeed: number = 0.5; // Speed of camera panning
 
     constructor(game: GameInterface) {
         this.game = game;
@@ -18,16 +20,17 @@ export class InputManager {
     }
 
     private setupEventListeners(): void {
-        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
-        window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+        window.addEventListener('keydown', (e) => this.onKeyDown(e));
+        window.addEventListener('keyup', (e) => this.onKeyUp(e));
     }
 
-    private handleKeyDown(event: KeyboardEvent): void {
+    private onKeyDown(event: KeyboardEvent): void {
         if (event.repeat) return;
         
         console.log('Key pressed:', event.code); // Debug log
         
         this.keyState.set(event.code, true);
+        this.keys.add(event.key.toLowerCase());
         
         // Handle control groups
         if (event.ctrlKey && event.code.startsWith('Digit')) {
@@ -50,19 +53,19 @@ export class InputManager {
                 this.toggleMode();
                 event.preventDefault();
                 break;
-            case 'KeyA':
+            case 'Digit1':
                 this.setAction('attack');
                 event.preventDefault();
                 break;
-            case 'KeyS':
+            case 'Digit2':
                 this.game.stopSelectedUnits();
                 event.preventDefault();
                 break;
-            case 'KeyH':
+            case 'Digit3':
                 this.game.holdSelectedUnits();
                 event.preventDefault();
                 break;
-            case 'KeyP':
+            case 'Digit4':
                 this.setAction('patrol');
                 event.preventDefault();
                 break;
@@ -75,10 +78,13 @@ export class InputManager {
                 event.preventDefault();
                 break;
         }
+
+        this.handleInput();
     }
 
-    private handleKeyUp(event: KeyboardEvent): void {
+    private onKeyUp(event: KeyboardEvent): void {
         this.keyState.set(event.code, false);
+        this.keys.delete(event.key.toLowerCase());
     }
 
     private toggleMode(): void {
@@ -109,6 +115,35 @@ export class InputManager {
     private cancelAction(): void {
         this.currentAction = null;
         this.game.cancelCurrentAction();
+    }
+
+    private handleInput(): void {
+        // Handle camera panning in both modes
+        if (this.keys.has('w')) {
+            this.game.panCamera('forward');
+        }
+        if (this.keys.has('s')) {
+            this.game.panCamera('backward');
+        }
+        if (this.keys.has('a')) {
+            this.game.panCamera('left');
+        }
+        if (this.keys.has('d')) {
+            this.game.panCamera('right');
+        }
+
+        // Handle mode switching
+        if (this.keys.has(' ')) {
+            this.game.updateControlMode(
+                this.game.getControlMode() === ControlMode.CAMERA 
+                    ? ControlMode.UNIT_CONTROL 
+                    : ControlMode.CAMERA
+            );
+        }
+    }
+
+    public update(): void {
+        this.handleInput();
     }
 
     public getMode(): ControlMode {

@@ -30,31 +30,70 @@ export class Unit extends THREE.Object3D {
     private selected: boolean;
     private scene: THREE.Scene;
     private healthBar: THREE.Group | null = null;
-    private static readonly baseMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
-    private static readonly robotMaterial = new THREE.MeshPhongMaterial({ color: 0x3366cc });
-    private static readonly harvesterMaterial = new THREE.MeshPhongMaterial({ color: 0xcc6633 });
-    private static readonly builderMaterial = new THREE.MeshPhongMaterial({ color: 0x33cc33 });
+    private static readonly baseMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x808080,
+        transparent: true,
+        opacity: 0.8,
+        emissive: 0x808080,
+        emissiveIntensity: 0.8
+    });
+    private static readonly robotMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x00ffff,
+        transparent: false,
+        opacity: 1.0,
+        emissive: 0x00ffff,
+        emissiveIntensity: 1.0,
+        shininess: 100,
+        fog: false
+    });
+    private static readonly harvesterMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x00ffff,
+        transparent: false,
+        opacity: 1.0,
+        emissive: 0x00ffff,
+        emissiveIntensity: 1.0,
+        shininess: 100,
+        fog: false
+    });
+    private static readonly builderMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x00ffff,
+        transparent: false,
+        opacity: 1.0,
+        emissive: 0x00ffff,
+        emissiveIntensity: 1.0,
+        shininess: 100,
+        fog: false
+    });
     private static readonly selectionRingMaterial = new THREE.MeshBasicMaterial({
-        color: 0x00ff00,
-        side: THREE.DoubleSide
+        color: 0xFFFF00,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8
     });
     private static readonly hoverRingMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffff00,
+        color: 0x00ffff,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.5
     });
-    private static readonly healthBarFrameMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    private static readonly healthBarFillMaterial = new THREE.MeshPhongMaterial({
+    private static readonly healthBarFrameMaterial = new THREE.LineBasicMaterial({ 
+        color: 0xFFFFFF,
         transparent: true,
         opacity: 0.8
     });
+    private static readonly healthBarFillMaterial = new THREE.MeshPhongMaterial({
+        transparent: false,
+        opacity: 1.0,
+        emissive: 0x00ff00,
+        emissiveIntensity: 1.0,
+        shininess: 100
+    });
     private static readonly explosionMaterial = new THREE.MeshPhongMaterial({
-        color: 0xff6600,
-        emissive: 0xff3300,
+        color: 0xFF4500,
+        emissive: 0xFF4500,
         emissiveIntensity: 1,
         transparent: true,
-        opacity: 1
+        opacity: 0.8
     });
 
     // Static geometries for reuse
@@ -121,7 +160,7 @@ export class Unit extends THREE.Object3D {
             turnSpeed: 3,
             size: new THREE.Vector3(3, 6, 3),
             supply: 1,
-            attackRange: 10,
+            attackRange: 20,
             attackDamage: 10,
             attackSpeed: 1,
             projectileSpeed: 20
@@ -132,7 +171,7 @@ export class Unit extends THREE.Object3D {
             turnSpeed: 2,
             size: new THREE.Vector3(4, 4, 6),
             supply: 2,
-            attackRange: 10,
+            attackRange: 20,
             attackDamage: 10,
             attackSpeed: 1,
             projectileSpeed: 5
@@ -143,7 +182,7 @@ export class Unit extends THREE.Object3D {
             turnSpeed: 2.5,
             size: new THREE.Vector3(4, 6, 4),
             supply: 2,
-            attackRange: 10,
+            attackRange: 20,
             attackDamage: 10,
             attackSpeed: 1,
             projectileSpeed: 5
@@ -174,6 +213,15 @@ export class Unit extends THREE.Object3D {
 
     private hoverRing: THREE.Mesh | null = null;
     private isHovered: boolean = false;
+
+    private static readonly edgeLineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x000000,
+        transparent: false,
+        opacity: 1.0,
+        depthWrite: true,
+        depthTest: true,
+        fog: false
+    });
 
     constructor(
         id: number, 
@@ -218,11 +266,6 @@ export class Unit extends THREE.Object3D {
     protected createMesh(): THREE.Group {
         const group = new THREE.Group();
         
-        // Create base for all units
-        const base = new THREE.Mesh(Unit.baseGeometry, Unit.baseMaterial);
-        base.position.y = 0.25;
-        group.add(base);
-
         // Add unit-specific mesh
         switch (this.unitType) {
             case UnitType.BASIC_ROBOT:
@@ -242,25 +285,57 @@ export class Unit extends THREE.Object3D {
     private addRobotMesh(group: THREE.Group): void {
         // Body
         const body = new THREE.Mesh(Unit.robotBodyGeometry, Unit.robotMaterial);
-        body.position.y = 1.25;
+        body.position.y = 0.75;
         group.add(body);
+
+        // Add edges to body
+        const bodyEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(Unit.robotBodyGeometry),
+            Unit.edgeLineMaterial
+        );
+        bodyEdges.position.y = 0.75;
+        group.add(bodyEdges);
 
         // Head
         const head = new THREE.Mesh(Unit.robotHeadGeometry, Unit.robotMaterial);
-        head.position.y = 2.3;
+        head.position.y = 1.8;
         group.add(head);
+
+        // Add edges to head
+        const headEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(Unit.robotHeadGeometry),
+            Unit.edgeLineMaterial
+        );
+        headEdges.position.y = 1.8;
+        group.add(headEdges);
     }
 
     private addHarvesterMesh(group: THREE.Group): void {
         // Main body
         const body = new THREE.Mesh(Unit.harvesterBodyGeometry, Unit.harvesterMaterial);
-        body.position.y = 1.25;
+        body.position.y = 0.75;
         group.add(body);
+
+        // Add edges to body
+        const bodyEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(Unit.harvesterBodyGeometry),
+            Unit.edgeLineMaterial
+        );
+        bodyEdges.position.y = 0.75;
+        group.add(bodyEdges);
 
         // Cab
         const cab = new THREE.Mesh(Unit.harvesterCabGeometry, Unit.harvesterMaterial);
-        cab.position.set(-0.75, 2, 0);
+        cab.position.set(-0.75, 1.55, 0);
         group.add(cab);
+
+        // Add edges to cab
+        const cabEdges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(Unit.harvesterCabGeometry),
+            Unit.edgeLineMaterial
+        );
+        cabEdges.position.set(-0.75, 1.55, 0);
+        group.add(cabEdges);
     }
 
     private addBuilderMesh(group: THREE.Group): void {
@@ -268,6 +343,14 @@ export class Unit extends THREE.Object3D {
         const body = new THREE.Mesh(Unit.builderPyramidGeometry, Unit.builderMaterial);
         body.position.y = 1;
         group.add(body);
+
+        // Add edges to pyramid
+        const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(Unit.builderPyramidGeometry),
+            Unit.edgeLineMaterial
+        );
+        edges.position.y = 1;
+        group.add(edges);
     }
 
     protected createSelectionRing(): THREE.Mesh {
@@ -322,6 +405,10 @@ export class Unit extends THREE.Object3D {
     }
 
     public update(delta: number): void {
+        // Update position on terrain
+        const height = this.worldManager.getHeightAt(this.position.x, this.position.z);
+        this.position.y = height; // Remove the offset since we're positioning units relative to their base
+
         if (this.targetPosition) {
             this.moveToTarget(delta);
         }
@@ -363,13 +450,16 @@ export class Unit extends THREE.Object3D {
         const healthPercent = this.health / this.stats.maxHealth;
         const material = this.healthBarFillCube.material as THREE.MeshPhongMaterial;
 
-        // Update color based on health percentage
+        // Update color based on health percentage with gradient
         if (healthPercent > 0.6) {
             material.color.setHex(0x00ff00);
+            material.emissive.setHex(0x00ff00);
         } else if (healthPercent > 0.3) {
             material.color.setHex(0xffff00);
+            material.emissive.setHex(0xffff00);
         } else {
             material.color.setHex(0xff0000);
+            material.emissive.setHex(0xff0000);
         }
 
         // Update scale
@@ -537,6 +627,12 @@ export class Unit extends THREE.Object3D {
         scrapPile.position.copy(this.position);
         this.scene.add(scrapPile);
 
+        // Add scrap pile to UnitManager for collection
+        const unitManager = this.scene.userData.unitManager;
+        if (unitManager) {
+            unitManager.addScrapPile(scrapPile);
+        }
+
         // Animate explosion
         let scale = 1;
         let opacity = 1;
@@ -561,37 +657,36 @@ export class Unit extends THREE.Object3D {
 
     private createScrapPile(): THREE.Group {
         const group = new THREE.Group();
-        const scrapCount = Math.floor(Math.random() * 5) + 3; // 3-7 pieces of scrap
-
-        for (let i = 0; i < scrapCount; i++) {
-            const size = Math.random() * 0.5 + 0.5; // 0.5-1.0 units
-            const geometry = new THREE.BoxGeometry(size, size, size);
-            const material = new THREE.MeshPhongMaterial({
-                color: 0x333333,
-                shininess: 30,
-                specular: 0x444444
-            });
-            const scrap = new THREE.Mesh(geometry, material);
-            
-            // Random position within a small radius
-            const angle = Math.random() * Math.PI * 2;
-            const radius = Math.random() * 0.5;
-            scrap.position.set(
-                Math.cos(angle) * radius,
-                size / 2,
-                Math.sin(angle) * radius
+        
+        // Create a small pile of scrap
+        const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.6,
+            emissive: 0x00ffff,
+            emissiveIntensity: 1.5,
+            wireframe: true,
+            side: THREE.DoubleSide
+        });
+        
+        // Create 3-5 pieces of scrap
+        const pieces = 3 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < pieces; i++) {
+            const piece = new THREE.Mesh(geometry, material);
+            piece.position.set(
+                (Math.random() - 0.5) * 0.5,
+                i * 0.2,
+                (Math.random() - 0.5) * 0.5
             );
-            
-            // Random rotation
-            scrap.rotation.set(
+            piece.rotation.set(
                 Math.random() * Math.PI,
                 Math.random() * Math.PI,
                 Math.random() * Math.PI
             );
-            
-            group.add(scrap);
+            group.add(piece);
         }
-
+        
         return group;
     }
 

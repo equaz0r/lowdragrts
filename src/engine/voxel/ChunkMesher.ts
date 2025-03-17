@@ -42,45 +42,85 @@ export class ChunkMesher {
 
     public static generateMesh(chunk: Chunk): THREE.Mesh {
         const geometry = new THREE.BufferGeometry();
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.8,
+            emissive: 0x00ff00,
+            emissiveIntensity: 0.5,
+            wireframe: true,
+            side: THREE.DoubleSide
+        });
+
         const vertices: number[] = [];
-        const normals: number[] = [];
         const indices: number[] = [];
-        const colors: number[] = [];
+        let vertexCount = 0;
 
-        // Iterate through all voxels in the chunk
-        for (let y = 0; y < CHUNK_SIZE; y++) {
-            for (let z = 0; z < CHUNK_SIZE; z++) {
-                for (let x = 0; x < CHUNK_SIZE; x++) {
+        // Generate mesh for each voxel
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            for (let y = 0; y < CHUNK_SIZE; y++) {
+                for (let z = 0; z < CHUNK_SIZE; z++) {
                     const voxelType = chunk.getVoxel(x, y, z);
-                    if (voxelType === VoxelType.AIR) continue;
+                    if (voxelType !== VoxelType.AIR) {
+                        // Add cube vertices
+                        const cubeVertices = this.getCubeVertices(x, y, z);
+                        vertices.push(...cubeVertices);
 
-                    this.addVoxelToMesh(
-                        chunk,
-                        x, y, z,
-                        voxelType,
-                        vertices,
-                        normals,
-                        indices,
-                        colors
-                    );
+                        // Add indices
+                        for (let i = 0; i < 24; i++) {
+                            indices.push(vertexCount + i);
+                        }
+                        vertexCount += 24;
+                    }
                 }
             }
         }
 
-        // Set geometry attributes
+        // Set up geometry
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.setIndex(indices);
+        geometry.computeVertexNormals();
 
-        // Create material
-        const material = new THREE.MeshPhongMaterial({
-            vertexColors: true,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
+        // Create and return mesh
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(chunk.position).multiplyScalar(CHUNK_SIZE);
+        return mesh;
+    }
 
-        return new THREE.Mesh(geometry, material);
+    private static getCubeVertices(x: number, y: number, z: number): number[] {
+        const size = 0.5;
+        return [
+            // Front face
+            x - size, y - size, z + size,
+            x + size, y - size, z + size,
+            x + size, y + size, z + size,
+            x - size, y + size, z + size,
+            // Back face
+            x - size, y - size, z - size,
+            x + size, y - size, z - size,
+            x + size, y + size, z - size,
+            x - size, y + size, z - size,
+            // Top face
+            x - size, y + size, z - size,
+            x + size, y + size, z - size,
+            x + size, y + size, z + size,
+            x - size, y + size, z + size,
+            // Bottom face
+            x - size, y - size, z - size,
+            x + size, y - size, z - size,
+            x + size, y - size, z + size,
+            x - size, y - size, z + size,
+            // Right face
+            x + size, y - size, z - size,
+            x + size, y + size, z - size,
+            x + size, y + size, z + size,
+            x + size, y - size, z + size,
+            // Left face
+            x - size, y - size, z - size,
+            x - size, y + size, z - size,
+            x - size, y + size, z + size,
+            x - size, y - size, z + size
+        ];
     }
 
     private static addVoxelToMesh(
@@ -92,41 +132,46 @@ export class ChunkMesher {
         vertices: number[],
         normals: number[],
         indices: number[],
-        colors: number[]
+        colors: number[],
+        vertexOffset: number,
+        indexOffset: number
     ): void {
-        const material = VOXEL_MATERIALS[voxelType];
+        const material = chunk.getMaterialForVoxelType(voxelType) as THREE.MeshPhongMaterial;
         const color = new THREE.Color(material.color);
 
         // Check each face
         Object.entries(this.FACES).forEach(([face, faceVertices]) => {
             if (this.shouldRenderFace(chunk, x, y, z, face)) {
-                const vertexOffset = vertices.length / 3;
+                const currentVertexOffset = vertexOffset + (Object.keys(this.FACES).indexOf(face) * 4);
 
                 // Add face vertices
-                faceVertices.forEach(vertex => {
-                    vertices.push(
-                        x + vertex[0],
-                        y + vertex[1],
-                        z + vertex[2]
-                    );
-                    colors.push(color.r, color.g, color.b);
+                faceVertices.forEach((vertex, i) => {
+                    const idx = currentVertexOffset + i;
+                    vertices[idx * 3] = x + vertex[0];
+                    vertices[idx * 3 + 1] = y + vertex[1];
+                    vertices[idx * 3 + 2] = z + vertex[2];
+                    colors[idx * 3] = color.r;
+                    colors[idx * 3 + 1] = color.g;
+                    colors[idx * 3 + 2] = color.b;
                 });
 
                 // Add face normals
                 const normal = this.NORMALS[face];
                 for (let i = 0; i < 4; i++) {
-                    normals.push(...normal);
+                    const idx = currentVertexOffset + i;
+                    normals[idx * 3] = normal[0];
+                    normals[idx * 3 + 1] = normal[1];
+                    normals[idx * 3 + 2] = normal[2];
                 }
 
                 // Add face indices
-                indices.push(
-                    vertexOffset,
-                    vertexOffset + 1,
-                    vertexOffset + 2,
-                    vertexOffset,
-                    vertexOffset + 2,
-                    vertexOffset + 3
-                );
+                const currentIndexOffset = indexOffset + (Object.keys(this.FACES).indexOf(face) * 2);
+                indices[currentIndexOffset * 3] = currentVertexOffset;
+                indices[currentIndexOffset * 3 + 1] = currentVertexOffset + 1;
+                indices[currentIndexOffset * 3 + 2] = currentVertexOffset + 2;
+                indices[currentIndexOffset * 3 + 3] = currentVertexOffset;
+                indices[currentIndexOffset * 3 + 4] = currentVertexOffset + 2;
+                indices[currentIndexOffset * 3 + 5] = currentVertexOffset + 3;
             }
         });
     }

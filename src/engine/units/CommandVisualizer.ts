@@ -38,13 +38,20 @@ export class CommandVisualizer {
         // Arrow head
         const headGeometry = new THREE.ConeGeometry(0.3, 0.5, 8);
         const head = new THREE.Mesh(headGeometry, material);
-        head.position.z = 0.75;
+        head.position.z = 0.5;
         head.rotation.x = -Math.PI / 2;
         arrow.add(head);
 
         // Position and rotate arrow
         arrow.position.copy(unitPos);
-        arrow.lookAt(target);
+        
+        // Create a quaternion to rotate the arrow to face the target
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 0, 1),
+            direction
+        );
+        arrow.setRotationFromQuaternion(quaternion);
 
         // Add to scene and store reference
         this.scene.add(arrow);

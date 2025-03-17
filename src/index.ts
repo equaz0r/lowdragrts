@@ -3,7 +3,6 @@ import { WorldManager } from './engine/voxel/WorldManager';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectsManager } from './engine/graphics/EffectsManager';
 import { ParticleSystem } from './engine/graphics/ParticleSystem';
-import { DayNightCycle } from './engine/environment/DayNightCycle';
 import { DebugUI } from './engine/ui/DebugUI';
 import { UnitManager } from './engine/units/UnitManager';
 import { UnitType } from './engine/units/Unit';
@@ -16,6 +15,8 @@ import { GameInterface } from './engine/interfaces/GameInterface';
 import { Unit } from './engine/units/Unit';
 import { SettingsManager, GameSettings } from './ui/SettingsManager';
 import { SettingsButton } from './ui/SettingsButton';
+import { EdgeDetection } from './engine/graphics/EdgeDetection';
+import { DayNightCycle } from './engine/environment/DayNightCycle';
 
 export class Game implements GameInterface {
     private scene: THREE.Scene;
@@ -25,7 +26,6 @@ export class Game implements GameInterface {
     private worldManager: WorldManager;
     private effectsManager: EffectsManager;
     private resourceParticles: Map<string, ParticleSystem>;
-    private dayNightCycle: DayNightCycle;
     private debugUI: DebugUI;
     private clock: THREE.Clock;
     private unitManager: UnitManager;
@@ -44,161 +44,149 @@ export class Game implements GameInterface {
     private isDragging: boolean = false;
     private settingsManager: SettingsManager;
     private settingsButton: SettingsButton;
+    private edgeDetection: EdgeDetection;
+    private dayNightCycle: DayNightCycle;
 
     constructor() {
         console.log('Game constructor called');
+        
+        // Scene setup
         this.scene = new THREE.Scene();
+        
+        // Create skybox
+        const skyboxGeometry = new THREE.BoxGeometry(1000, 1000, 1000);
+        const skyboxMaterials = [
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }), // Darker blue for better contrast
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+        ];
+        const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterials);
+        this.scene.add(skybox);
+        
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Reduced intensity for better contrast
+        this.scene.add(ambientLight);
+        
+        // Add directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Reduced intensity
+        directionalLight.position.set(10, 10, 10);
+        directionalLight.lookAt(0, 0, 0);
+        this.scene.add(directionalLight);
+        
+        // Add hemisphere light for better overall illumination
+        const hemisphereLight = new THREE.HemisphereLight(0x404040, 0x202020, 0.3); // Reduced intensity
+        hemisphereLight.position.set(0, 10, 0);
+        this.scene.add(hemisphereLight);
+        
+        // Initialize day/night cycle
+        this.dayNightCycle = new DayNightCycle(this.scene);
+        
+        // Renderer setup
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: false
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2; // Slightly reduced exposure
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        document.body.appendChild(this.renderer.domElement);
+        
+        // Camera setup
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.camera.position.set(0, 10, 20);
+        this.camera.lookAt(0, 0, 0);
         
-        // Add orbit controls
+        // Controls setup
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.minDistance = 5;
+        this.controls.maxDistance = 50;
+        this.controls.maxPolarAngle = Math.PI; // Allow full vertical rotation
+        this.controls.minPolarAngle = 0; // Allow looking straight down
+        this.controls.target.set(0, 0, 0);
         
-        // Create world manager
+        // Add camera position constraint
+        this.controls.addEventListener('change', () => {
+            // Ensure camera doesn't go below ground
+            if (this.camera.position.y < 0) {
+                this.camera.position.y = 0;
+            }
+            // Ensure target doesn't go below ground
+            if (this.controls.target.y < 0) {
+                this.controls.target.y = 0;
+            }
+        });
+        
+        // Initialize managers
         this.worldManager = new WorldManager(this.scene);
+        this.effectsManager = new EffectsManager(this.scene, this.camera, this.renderer);
+        this.debugUI = new DebugUI(
+            () => {}, // No-op for time update
+            () => {}, // No-op for auto-rotate
+            () => this.regenerateWorld()
+        );
         
+        // Initialize other components
         this.resourceParticles = new Map();
-        
         this.clock = new THREE.Clock();
-        
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
-        
         this.selectionBox = new SelectionBox();
         this.gameUI = new GameUI();
-        
         this.projectileManager = new ProjectileManager(this.scene);
-        
         this.commandVisualizer = new CommandVisualizer(this.scene);
         
+        // Initialize unit manager
+        this.unitManager = new UnitManager(
+            this.scene,
+            this.worldManager,
+            this.projectileManager,
+            this.commandVisualizer,
+            this.gameUI
+        );
+        
+        // Initialize input manager
         this.inputManager = new InputManager(this);
-
+        
         // Initialize settings
         this.settingsManager = new SettingsManager(this.handleSettingsChange.bind(this));
         this.settingsButton = new SettingsButton(this.settingsManager);
         document.body.appendChild(this.settingsButton.getElement());
         document.body.appendChild(this.settingsManager.getElement());
-
-        // Initialize previously uninitialized properties
-        this.effectsManager = new EffectsManager(this.scene, this.camera, this.renderer);
-        this.dayNightCycle = new DayNightCycle(this.scene);
-        this.debugUI = new DebugUI(
-            (time) => this.dayNightCycle.updateSunPosition(time),
-            (enabled) => this.dayNightCycle.setAutoRotate(enabled),
-            () => this.regenerateWorld()
-        );
-        this.unitManager = new UnitManager(
-            this.scene,
-            this.worldManager,
-            this.projectileManager,
-            this.commandVisualizer,
-            this.gameUI
-        );
         
-        this.init();
-    }
-
-    private handleSettingsChange(settings: GameSettings): void {
-        this.projectileManager.updateProjectileSettings(settings);
-    }
-
-    private init(): void {
-        console.log('Game init started');
-        // Setup renderer
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setClearColor(0x87CEEB); // Sky blue color
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(this.renderer.domElement);
-
+        // Initialize edge detection
+        this.edgeDetection = new EdgeDetection(this.scene, this.camera, this.renderer);
+        
         // Add camera to scene for unit selection
         this.scene.userData.camera = this.camera;
-
-        // Setup lights
-        const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased intensity
-        this.scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Increased intensity
-        directionalLight.position.set(100, 100, 50);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 500;
-        this.scene.add(directionalLight);
-
-        // Add hemisphere light for better ambient lighting
-        const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-        this.scene.add(hemisphereLight);
-
-        // Setup camera
-        this.camera.position.set(50, 50, 50);
-        this.camera.lookAt(0, 0, 0);
-        this.controls.enabled = false; // Start in unit control mode
-
-        // Configure controls
-        this.controls.maxPolarAngle = Math.PI * 0.45; // Limit how low camera can go
-        this.controls.minDistance = 20;
-        this.controls.maxDistance = 500;
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
-
-        // Generate more initial chunks
-        this.worldManager.generateInitialChunks(8); // Increased radius
-
-        // Setup post-processing
-        this.effectsManager = new EffectsManager(this.scene, this.camera, this.renderer);
-
-        // Add some particle systems for resources
-        this.resourceParticles.set('skirulum', new ParticleSystem(
-            this.scene,
-            new THREE.Color(0x4B0082),
-            500
-        ));
-
-        this.resourceParticles.set('fredalite', new ParticleSystem(
-            this.scene,
-            new THREE.Color(0x00FF00),
-            300
-        ));
-
-        // Setup day/night cycle
-        this.dayNightCycle = new DayNightCycle(this.scene);
-
-        // Setup debug UI
-        this.debugUI = new DebugUI(
-            (time) => this.dayNightCycle.updateSunPosition(time),
-            (enabled) => this.dayNightCycle.setAutoRotate(enabled),
-            () => this.regenerateWorld()
-        );
-
-        // Setup unit manager
-        this.unitManager = new UnitManager(
-            this.scene,
-            this.worldManager,
-            this.projectileManager,
-            this.commandVisualizer,
-            this.gameUI
-        );
-
-        // Add some test units
-        const unit1 = this.unitManager.createUnit(UnitType.BASIC_ROBOT, new THREE.Vector3(0, 20, 0));
-        const unit2 = this.unitManager.createUnit(UnitType.HARVESTER, new THREE.Vector3(10, 20, 0));
-        const unit3 = this.unitManager.createUnit(UnitType.BUILDER, new THREE.Vector3(-10, 20, 0));
-
+        
+        // Generate initial world
+        console.log('Generating initial world...');
+        this.worldManager.generateInitialChunks(8);
+        
+        // Create test units
+        console.log('Creating test units...');
+        this.unitManager.createUnit(UnitType.BASIC_ROBOT, new THREE.Vector3(0, 0, 0));
+        this.unitManager.createUnit(UnitType.HARVESTER, new THREE.Vector3(10, 0, 0));
+        this.unitManager.createUnit(UnitType.BUILDER, new THREE.Vector3(-10, 0, 0));
+        
         // Setup event listeners
         this.setupEventListeners();
-
-        // Update window resize handler
-        window.addEventListener('resize', () => {
-            this.onWindowResize();
-            this.effectsManager.setSize(window.innerWidth, window.innerHeight);
-        }, false);
-
+        
+        // Start animation loop
+        console.log('Starting animation loop...');
         this.animate();
-
+        
         this.isInitialized = true;
-        console.log('Game init completed');
+        console.log('Game initialization completed');
     }
 
     private setupEventListeners(): void {
@@ -214,39 +202,43 @@ export class Game implements GameInterface {
         }) as EventListener);
     }
 
-    private handleGameAction(action: string): void {
-        console.log('Handling game action:', action);
-        switch (action) {
-            case 'attack':
-                this.setCurrentAction('attack');
-                break;
-            case 'stop':
-                this.stopSelectedUnits();
-                this.cancelCurrentAction();
-                break;
-            case 'hold':
-                this.holdSelectedUnits();
-                break;
-            case 'patrol':
-                // TODO: Implement patrol
-                break;
-            case 'toggleMode':
-                this.updateControlMode(
-                    this.controlMode === ControlMode.CAMERA 
-                        ? ControlMode.UNIT_CONTROL 
-                        : ControlMode.CAMERA
-                );
-                break;
-            case 'help':
-                this.gameUI.toggleHotkeyDisplay();
-                break;
-        }
+    private animate(): void {
+        requestAnimationFrame(() => this.animate());
+        
+        const delta = this.clock.getDelta();
+        
+        if (!this.isInitialized) return;
+
+        // Update managers
+        this.unitManager.update(delta);
+        this.projectileManager.update(delta);
+        this.worldManager.update();
+        this.inputManager.update();
+        
+        // Update day/night cycle
+        const time = (this.clock.getElapsedTime() % 600) / 600; // 10 minutes per day cycle
+        this.dayNightCycle.updateSunPosition(time);
+
+        // Update UI
+        this.unitManager.updateSelectedUnitsInfo();
+        this.unitManager.updateScrapCounter();
+
+        // Update camera controls
+        this.controls.update();
+
+        // Render with edge detection
+        this.edgeDetection.render();
+    }
+
+    private handleSettingsChange(settings: GameSettings): void {
+        this.projectileManager.updateProjectileSettings(settings);
     }
 
     private onWindowResize(): void {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.edgeDetection.setSize(window.innerWidth, window.innerHeight);
     }
 
     private regenerateWorld(): void {
@@ -328,35 +320,6 @@ export class Game implements GameInterface {
 
     private onContextMenu(event: MouseEvent): void {
         event.preventDefault();
-    }
-
-    private animate(): void {
-        requestAnimationFrame(() => this.animate());
-        
-        const delta = this.clock.getDelta();
-        
-        if (!this.isInitialized) return;
-
-        // Update day/night cycle
-        this.dayNightCycle.update(delta);
-        if (this.dayNightCycle.getTime() !== this.debugUI.getCurrentTime()) {
-            this.debugUI.updateTime(this.dayNightCycle.getTime());
-        }
-        
-        // Update managers
-        this.unitManager.update(delta);
-        this.projectileManager.update(delta);
-        this.worldManager.update();
-
-        // Update UI
-        this.unitManager.updateSelectedUnitsInfo();
-        this.unitManager.updateScrapCounter();
-
-        // Update camera controls
-        this.controls.update();
-
-        // Render the scene
-        this.renderer.render(this.scene, this.camera);
     }
 
     private onKeyDown(event: KeyboardEvent): void {
@@ -446,5 +409,79 @@ export class Game implements GameInterface {
         const direction = new THREE.Vector3();
         this.camera.getWorldDirection(direction);
         return this.camera.position.clone().add(direction.multiplyScalar(distance));
+    }
+
+    public getControlMode(): ControlMode {
+        return this.controlMode;
+    }
+
+    public panCamera(direction: 'forward' | 'backward' | 'left' | 'right'): void {
+        const speed = 0.5;
+        const moveAmount = new THREE.Vector3();
+        
+        // Get camera's forward and right vectors
+        const forward = new THREE.Vector3();
+        this.camera.getWorldDirection(forward);
+        // Project forward vector onto the XZ plane (ground plane)
+        forward.y = 0;
+        forward.normalize();
+        
+        const right = new THREE.Vector3();
+        right.crossVectors(this.camera.up, forward).normalize();
+
+        switch (direction) {
+            case 'forward':
+                moveAmount.copy(forward).multiplyScalar(speed);
+                break;
+            case 'backward':
+                moveAmount.copy(forward).multiplyScalar(-speed);
+                break;
+            case 'left':
+                moveAmount.copy(right).multiplyScalar(speed); // Swapped direction
+                break;
+            case 'right':
+                moveAmount.copy(right).multiplyScalar(-speed); // Swapped direction
+                break;
+        }
+
+        // Move camera and controls target
+        const newCameraPos = this.camera.position.clone().add(moveAmount);
+        const newTargetPos = this.controls.target.clone().add(moveAmount);
+
+        // Ensure neither camera nor target goes below ground
+        if (newCameraPos.y >= 0 && newTargetPos.y >= 0) {
+            this.camera.position.copy(newCameraPos);
+            this.controls.target.copy(newTargetPos);
+            this.controls.update();
+        }
+    }
+
+    private handleGameAction(action: string): void {
+        console.log('Handling game action:', action);
+        switch (action) {
+            case 'attack':
+                this.setCurrentAction('attack');
+                break;
+            case 'stop':
+                this.stopSelectedUnits();
+                this.cancelCurrentAction();
+                break;
+            case 'hold':
+                this.holdSelectedUnits();
+                break;
+            case 'patrol':
+                // TODO: Implement patrol
+                break;
+            case 'toggleMode':
+                this.updateControlMode(
+                    this.controlMode === ControlMode.CAMERA 
+                        ? ControlMode.UNIT_CONTROL 
+                        : ControlMode.CAMERA
+                );
+                break;
+            case 'help':
+                this.gameUI.toggleHotkeyDisplay();
+                break;
+        }
     }
 }

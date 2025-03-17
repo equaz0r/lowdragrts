@@ -21,10 +21,10 @@ export class EffectsManager {
 
         // Add bloom effect
         this.bloomEffect = new BloomEffect({
-            luminanceThreshold: 0.4,
-            luminanceSmoothing: 0.3,
-            intensity: 1.5,
-            radius: 0.4
+            luminanceThreshold: 0.2,
+            luminanceSmoothing: 0.5,
+            intensity: 2.0,
+            radius: 0.8
         });
 
         // Add SMAA (anti-aliasing)

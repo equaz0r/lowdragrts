@@ -9,4 +9,6 @@ export interface GameInterface {
     stopSelectedUnits(): void;
     holdSelectedUnits(): void;
     toggleHelp(): void;
+    getControlMode(): ControlMode;
+    panCamera(direction: 'forward' | 'backward' | 'left' | 'right'): void;
 } 
