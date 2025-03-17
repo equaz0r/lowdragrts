@@ -1,4 +1,6 @@
+import * as THREE from 'three';
 import { ControlMode } from '../controls/InputManager';
+import { UnitType } from '../units/Unit';
 
 export class GameUI {
     private container: HTMLDivElement;
@@ -11,10 +13,14 @@ export class GameUI {
     private actionIndicator: HTMLDivElement;
     private cursorStyle: string;
     private currentMode: string;
+    private unitInfo: HTMLDivElement | null;
+    private cursorStyleElement: HTMLStyleElement;
+    private scrapCounter: HTMLDivElement;
 
     constructor() {
         // Initialize all properties in constructor
         this.container = document.createElement('div');
+        this.container.className = 'game-ui';
         this.controlBar = document.createElement('div');
         this.statusBar = document.createElement('div');
         this.modeIndicator = document.createElement('div');
@@ -24,29 +30,89 @@ export class GameUI {
         this.actionIndicator = document.createElement('div');
         this.cursorStyle = 'default';
         this.currentMode = 'CAMERA';
+        this.unitInfo = null;
+        this.cursorStyleElement = document.createElement('style');
+        this.scrapCounter = document.createElement('div');
+        document.head.appendChild(this.cursorStyleElement);
 
+        // Set up UI elements
         this.setupUI();
     }
 
     private setupUI(): void {
-        // Setup container
-        this.container.style.position = 'absolute';
-        this.container.style.top = '0';
-        this.container.style.left = '0';
-        this.container.style.width = '100%';
-        this.container.style.height = '100%';
-        document.body.appendChild(this.container);
-
-        // Setup mode indicator
-        this.modeIndicator.style.position = 'absolute';
-        this.modeIndicator.style.top = '10px';
-        this.modeIndicator.style.left = '10px';
-        this.modeIndicator.style.padding = '5px';
-        this.modeIndicator.style.backgroundColor = 'rgba(0,0,0,0.7)';
-        this.modeIndicator.style.color = 'white';
-        this.container.appendChild(this.modeIndicator);
+        this.container = document.createElement('div');
+        this.container.className = 'game-ui';
         
-        this.updateModeIndicator();
+        // Create unit info panel
+        this.unitInfo = document.createElement('div');
+        this.unitInfo.className = 'unit-info';
+        this.container.appendChild(this.unitInfo);
+
+        // Create styles
+        const styleElement = document.createElement('style');
+        styleElement.textContent = `
+            .game-ui {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 1000;
+            }
+            .game-ui * {
+                pointer-events: auto;
+            }
+            .selection-box {
+                position: absolute;
+                border: 2px solid #00ff00;
+                background-color: rgba(0, 255, 0, 0.1);
+                pointer-events: none;
+            }
+            .unit-info {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 10px;
+                border-radius: 5px;
+                font-family: Arial, sans-serif;
+            }
+            .action-indicator {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-family: Arial, sans-serif;
+                font-size: 16px;
+                display: none;
+            }
+        `;
+        document.head.appendChild(styleElement);
+
+        // Create all UI elements
+        this.createStatusBar();
+        this.createControlBar();
+        this.createHotkeyDisplay();
+        this.createCursorCoordinates();
+        this.createCursorStyles();
+
+        // Add action indicator
+        this.actionIndicator = document.createElement('div');
+        this.actionIndicator.className = 'action-indicator';
+        this.container.appendChild(this.actionIndicator);
+
+        // Add scrap counter
+        this.scrapCounter = document.createElement('div');
+        this.scrapCounter.className = 'scrap-counter';
+        this.container.appendChild(this.scrapCounter);
+
+        document.body.appendChild(this.container);
     }
 
     private createStatusBar(): void {
@@ -65,6 +131,7 @@ export class GameUI {
         this.statusBar.style.fontFamily = 'Arial, sans-serif';
         this.statusBar.style.fontSize = '14px';
         this.statusBar.style.borderRadius = '5px';
+        this.statusBar.style.zIndex = '1001';
 
         // Mode indicator
         this.modeIndicator = document.createElement('div');
@@ -75,6 +142,11 @@ export class GameUI {
         this.selectedUnitsInfo = document.createElement('div');
         this.selectedUnitsInfo.textContent = 'Selected: 0 units';
         this.statusBar.appendChild(this.selectedUnitsInfo);
+
+        // Settings button
+        const settingsButton = this.createButton('⚙️ Settings', 'settings');
+        settingsButton.style.marginLeft = '20px';
+        this.statusBar.appendChild(settingsButton);
 
         this.container.appendChild(this.statusBar);
     }
@@ -90,6 +162,7 @@ export class GameUI {
         this.controlBar.style.padding = '10px';
         this.controlBar.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
         this.controlBar.style.borderRadius = '5px';
+        this.controlBar.style.zIndex = '1001';
 
         // Add control buttons
         const buttons = [
@@ -134,6 +207,14 @@ export class GameUI {
             button.style.backgroundColor = '#555';
         });
 
+        // Add click handler
+        button.addEventListener('click', () => {
+            const event = new CustomEvent('gameAction', {
+                detail: { action: action }
+            });
+            document.dispatchEvent(event);
+        });
+
         return button;
     }
 
@@ -173,7 +254,7 @@ export class GameUI {
     private createCursorCoordinates(): void {
         this.cursorCoordinates = document.createElement('div');
         this.cursorCoordinates.style.position = 'fixed';
-        this.cursorCoordinates.style.bottom = '10px';
+        this.cursorCoordinates.style.bottom = '50px'; // Moved up to avoid overlap with control bar
         this.cursorCoordinates.style.right = '10px';
         this.cursorCoordinates.style.padding = '5px 10px';
         this.cursorCoordinates.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
@@ -181,13 +262,14 @@ export class GameUI {
         this.cursorCoordinates.style.fontFamily = 'monospace';
         this.cursorCoordinates.style.fontSize = '12px';
         this.cursorCoordinates.style.borderRadius = '3px';
+        this.cursorCoordinates.style.zIndex = '1001';
 
         this.container.appendChild(this.cursorCoordinates);
     }
 
     private createCursorStyles(): void {
-        this.cursorStyle = document.createElement('style');
-        document.head.appendChild(this.cursorStyle);
+        this.cursorStyleElement = document.createElement('style');
+        document.head.appendChild(this.cursorStyleElement);
         this.updateCursorStyle('default');
     }
 
@@ -212,23 +294,37 @@ export class GameUI {
     }
 
     private updateCursorStyle(cursorType: string): void {
-        this.cursorStyle.textContent = `
-            body { 
-                cursor: ${cursorType} !important;
-            }
-        `;
+        this.cursorStyle = cursorType;
+        if (this.cursorStyleElement) {
+            this.cursorStyleElement.textContent = `
+                body { 
+                    cursor: ${cursorType} !important;
+                }
+            `;
+        }
     }
 
-    public updateSelectedUnits(count: number, types: Map<string, number>): void {
-        let text = `Selected: ${count} unit${count !== 1 ? 's' : ''}`;
-        if (count > 0) {
-            const typeStrings: string[] = [];
-            types.forEach((count, type) => {
-                typeStrings.push(`${count} ${type}`);
-            });
-            text += ` (${typeStrings.join(', ')})`;
+    public updateSelectedUnitsInfo(selectedUnits: { type: UnitType; count: number; health?: number; maxHealth?: number }[]): void {
+        if (selectedUnits.length === 0) {
+            this.selectedUnitsInfo.textContent = 'No units selected';
+            return;
         }
-        this.selectedUnitsInfo.textContent = text;
+
+        let info = 'Selected Units:\n';
+        selectedUnits.forEach(unit => {
+            info += `${unit.type}: ${unit.count}\n`;
+        });
+
+        // Add health info for single unit selection
+        if (selectedUnits.length === 1) {
+            const unit = selectedUnits[0];
+            if (unit.health !== undefined && unit.maxHealth !== undefined) {
+                const healthPercent = (unit.health / unit.maxHealth) * 100;
+                info += `\nHealth: ${healthPercent.toFixed(1)}%`;
+            }
+        }
+
+        this.selectedUnitsInfo.textContent = info;
     }
 
     public updateCursorPosition(x: number, y: number, z: number): void {
@@ -243,5 +339,19 @@ export class GameUI {
 
     public dispose(): void {
         document.body.removeChild(this.container);
+    }
+
+    public updateUnitInfo(info: string): void {
+        if (this.unitInfo) {
+            this.unitInfo.textContent = info;
+        }
+    }
+
+    public updateCursorCoordinates(coordinates: THREE.Vector3): void {
+        this.cursorCoordinates.textContent = `X: ${coordinates.x.toFixed(1)} Y: ${coordinates.y.toFixed(1)} Z: ${coordinates.z.toFixed(1)}`;
+    }
+
+    public updateScrapCounter(scrap: number): void {
+        this.scrapCounter.textContent = `Scrap: ${scrap}`;
     }
 } 

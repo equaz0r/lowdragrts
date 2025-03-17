@@ -54,7 +54,7 @@ export class CommandVisualizer {
         setTimeout(() => this.removeMoveCommand(unit.getId()), 2000);
     }
 
-    private showAttackCommand(unitId: number, start: THREE.Vector3, end: THREE.Vector3): void {
+    public showAttackCommand(unitId: number, start: THREE.Vector3, end: THREE.Vector3): void {
         // Remove existing markers
         this.removeAttackMarkers(unitId);
 
@@ -92,6 +92,15 @@ export class CommandVisualizer {
         ring.rotation.x = -Math.PI / 2;
         group.add(ring);
 
+        // Add pulsing effect
+        const animate = () => {
+            if (!ring.visible) return;
+            const scale = 1 + Math.sin(Date.now() * 0.005) * 0.1;
+            ring.scale.set(scale, scale, scale);
+            requestAnimationFrame(animate);
+        };
+        animate();
+
         return group;
     }
 
@@ -117,6 +126,15 @@ export class CommandVisualizer {
         lineGeometry.setFromPoints(points);
         const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
         group.add(lines);
+
+        // Add pulsing effect
+        const animate = () => {
+            if (!lines.visible) return;
+            const scale = 1 + Math.sin(Date.now() * 0.005) * 0.1;
+            lines.scale.set(scale, scale, scale);
+            requestAnimationFrame(animate);
+        };
+        animate();
 
         return group;
     }

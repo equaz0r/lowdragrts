@@ -135,4 +135,79 @@ The following TypeScript compilation errors need to be resolved:
    - Enhanced unit models with distinct shapes
    - Improved command visualization
    - Better selection and hover feedback
-   - Clearer UI mode indicators 
+   - Clearer UI mode indicators
+
+## Latest Changes
+- Fixed projectile behavior:
+  - Projectiles now correctly originate from the source unit's position
+  - Added a small upward angle to make projectiles more visible
+  - Increased projectile size, speed, and visual effects
+  - Improved hit detection radius
+- Improved unit combat behavior:
+  - Units now stay in place when attacking instead of moving towards targets
+  - Added proper line of sight (LoS) checks for combat
+  - Units stop attacking when target is destroyed
+  - Added height-based LoS checks to handle units at different elevations
+
+## Current Features
+- Basic unit movement and selection
+- Combat system with projectiles
+- Health bars and unit status visualization
+- Terrain system with height variations
+- Line of sight checks for combat
+- Unit death effects and scrap piles
+
+## Planned Features
+1. Resource System
+   - Implement scrap collection mechanics
+   - Add resource UI and management
+   - Create resource nodes on the map
+
+2. Building System
+   - Add building placement mechanics
+   - Implement building types (production, research, etc.)
+   - Add building construction visualization
+
+3. Unit Production
+   - Add unit production buildings
+   - Implement unit queue system
+   - Add production progress visualization
+
+4. Research System
+   - Add research buildings
+   - Implement technology tree
+   - Add research progress tracking
+
+5. AI and Pathfinding
+   - Improve unit pathfinding
+   - Add basic AI for enemy units
+   - Implement formation movement
+
+6. UI Improvements
+   - Add minimap
+   - Implement unit command queue
+   - Add building/unit information panels
+   - Improve settings menu functionality
+
+7. Combat Enhancements
+   - Add different unit types with unique abilities
+   - Implement unit formations
+   - Add combat animations
+   - Improve projectile effects
+
+8. Game Flow
+   - Add win/lose conditions
+   - Implement game phases
+   - Add mission objectives
+
+## Known Issues
+- Settings menu needs proper initialization and connection to game systems
+- Some visual effects could be optimized for better performance
+- Unit selection and command system could be more responsive
+
+## Next Steps
+1. Implement the resource system
+2. Add building placement mechanics
+3. Improve the settings menu functionality
+4. Add unit production system
+5. Enhance the AI and pathfinding 

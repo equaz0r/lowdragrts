@@ -1,11 +1,13 @@
 export class HelpDialog {
     private dialog: HTMLDivElement;
+    private isVisible: boolean = false;
 
     constructor() {
-        this.createDialog();
+        this.dialog = this.createDialog();
+        this.setupEventListeners();
     }
 
-    private createDialog(): void {
+    private createDialog(): HTMLDivElement {
         this.dialog = document.createElement('div');
         this.dialog.style.position = 'fixed';
         this.dialog.style.top = '50%';
@@ -45,6 +47,11 @@ export class HelpDialog {
 
         this.dialog.appendChild(table);
         document.body.appendChild(this.dialog);
+        return this.dialog;
+    }
+
+    private setupEventListeners(): void {
+        // Implementation of setupEventListeners method
     }
 
     public toggle(): void {
