@@ -1,169 +1,96 @@
-import { DraggableUI } from './DraggableUI';
+import { TerrainGenerator } from '../terrain/TerrainGenerator';
+import { LightingSystem } from '../terrain/LightingSystem';
 
 export class DebugUI {
-    private container: HTMLElement;
-    private timeSlider: HTMLInputElement;
-    private timeDisplay: HTMLElement;
-    private autoRotateCheckbox: HTMLInputElement;
-    private regenerateButton: HTMLElement;
-    private draggableUI: DraggableUI;
+    private container: HTMLDivElement;
+    private terrainGenerator: TerrainGenerator;
+    private lightingSystem: LightingSystem;
+    private seedInput: HTMLInputElement = document.createElement('input');
+    private timeSlider: HTMLInputElement = document.createElement('input');
+    private randomSeedButton: HTMLButtonElement = document.createElement('button');
 
-    constructor(
-        onTimeChange: (time: number) => void,
-        onAutoRotateChange: (enabled: boolean) => void,
-        onRegenerate: () => void
-    ) {
-        // Create main container
+    constructor(terrainGenerator: TerrainGenerator, lightingSystem: LightingSystem) {
+        this.terrainGenerator = terrainGenerator;
+        this.lightingSystem = lightingSystem;
         this.container = document.createElement('div');
         this.container.style.position = 'fixed';
-        this.container.style.right = '20px';
-        this.container.style.top = '50%';
-        this.container.style.transform = 'translateY(-50%)';
-        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-        this.container.style.color = '#00ff00';
-        this.container.style.fontFamily = 'Consolas, monospace';
-        this.container.style.fontSize = '12px';
-        this.container.style.border = '1px solid #00ff00';
-        this.container.style.borderRadius = '5px';
+        this.container.style.top = '10px';
+        this.container.style.left = '10px';
+        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        this.container.style.padding = '10px';
+        this.container.style.color = 'white';
+        this.container.style.fontFamily = 'monospace';
         this.container.style.zIndex = '1000';
-        this.container.style.pointerEvents = 'auto';
-        this.container.style.width = '300px';
-        this.container.style.minHeight = '200px';
-        this.container.style.maxHeight = '80vh';
-        this.container.style.display = 'flex';
-        this.container.style.flexDirection = 'column';
-        this.container.style.overflow = 'hidden';
-        this.container.style.boxSizing = 'border-box';
+        
+        this.initialize();
+    }
 
-        // Create content container
-        const contentContainer = document.createElement('div');
-        contentContainer.style.padding = '10px';
-        contentContainer.style.flex = '1';
-        contentContainer.style.overflow = 'hidden';
-        contentContainer.style.display = 'flex';
-        contentContainer.style.flexDirection = 'column';
-        contentContainer.style.gap = '10px';
-        contentContainer.style.boxSizing = 'border-box';
-
-        // Create time control section
-        const timeSection = document.createElement('div');
-        timeSection.style.marginBottom = '10px';
-        timeSection.style.paddingBottom = '10px';
-        timeSection.style.borderBottom = '1px solid #00ff00';
-        timeSection.style.width = '100%';
-        timeSection.style.boxSizing = 'border-box';
-
-        // Time slider label
-        const timeLabel = document.createElement('div');
-        timeLabel.textContent = 'Time of Day';
-        timeLabel.style.marginBottom = '5px';
-        timeLabel.style.color = '#00ff00';
-        timeLabel.style.width = '100%';
-        timeLabel.style.boxSizing = 'border-box';
-        timeSection.appendChild(timeLabel);
-
-        // Time slider
-        this.timeSlider = document.createElement('input');
+    private initialize(): void {
+        // Create seed control
+        const seedContainer = document.createElement('div');
+        seedContainer.style.marginBottom = '10px';
+        
+        const seedLabel = document.createElement('label');
+        seedLabel.textContent = 'Seed: ';
+        
+        this.seedInput.type = 'number';
+        this.seedInput.value = this.terrainGenerator.getSeed().toString();
+        this.seedInput.style.width = '100px';
+        this.seedInput.style.marginRight = '5px';
+        
+        this.randomSeedButton.textContent = 'Random';
+        this.randomSeedButton.style.marginLeft = '5px';
+        
+        seedContainer.appendChild(seedLabel);
+        seedContainer.appendChild(this.seedInput);
+        seedContainer.appendChild(this.randomSeedButton);
+        
+        // Create time control
+        const timeContainer = document.createElement('div');
+        timeContainer.style.marginBottom = '10px';
+        
+        const timeLabel = document.createElement('label');
+        timeLabel.textContent = 'Time: ';
+        
         this.timeSlider.type = 'range';
         this.timeSlider.min = '0';
-        this.timeSlider.max = '1';
-        this.timeSlider.step = '0.01';
-        this.timeSlider.value = '0.25';
-        this.timeSlider.style.width = '100%';
-        this.timeSlider.style.marginBottom = '5px';
-        this.timeSlider.style.accentColor = '#00ff00';
-        this.timeSlider.style.boxSizing = 'border-box';
-        this.timeSlider.style.cursor = 'pointer';
-        timeSection.appendChild(this.timeSlider);
-
-        // Time display
-        this.timeDisplay = document.createElement('div');
-        this.timeDisplay.style.marginBottom = '5px';
-        this.timeDisplay.style.width = '100%';
-        this.timeDisplay.style.boxSizing = 'border-box';
-        timeSection.appendChild(this.timeDisplay);
-
-        // Auto-rotate checkbox
-        const autoRotateLabel = document.createElement('label');
-        autoRotateLabel.style.display = 'flex';
-        autoRotateLabel.style.alignItems = 'center';
-        autoRotateLabel.style.gap = '5px';
-        autoRotateLabel.style.cursor = 'pointer';
-        autoRotateLabel.style.width = '100%';
-        autoRotateLabel.style.boxSizing = 'border-box';
-
-        this.autoRotateCheckbox = document.createElement('input');
-        this.autoRotateCheckbox.type = 'checkbox';
-        this.autoRotateCheckbox.style.accentColor = '#00ff00';
-        this.autoRotateCheckbox.style.cursor = 'pointer';
-        autoRotateLabel.appendChild(this.autoRotateCheckbox);
-
-        const autoRotateText = document.createElement('span');
-        autoRotateText.textContent = 'Auto-rotate Camera';
-        autoRotateText.style.whiteSpace = 'nowrap';
-        autoRotateLabel.appendChild(autoRotateText);
-
-        timeSection.appendChild(autoRotateLabel);
-        contentContainer.appendChild(timeSection);
-
-        // Regenerate button
-        this.regenerateButton = document.createElement('button');
-        this.regenerateButton.textContent = 'Regenerate World';
-        this.regenerateButton.style.marginTop = '10px';
-        this.regenerateButton.style.padding = '8px 16px';
-        this.regenerateButton.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-        this.regenerateButton.style.color = '#00ff00';
-        this.regenerateButton.style.border = '1px solid #00ff00';
-        this.regenerateButton.style.borderRadius = '4px';
-        this.regenerateButton.style.cursor = 'pointer';
-        this.regenerateButton.style.fontFamily = 'Consolas, monospace';
-        this.regenerateButton.style.fontSize = '12px';
-        this.regenerateButton.style.transition = 'all 0.3s ease';
-        this.regenerateButton.style.width = '100%';
-        this.regenerateButton.style.boxSizing = 'border-box';
-
-        this.regenerateButton.addEventListener('mouseenter', () => {
-            this.regenerateButton.style.backgroundColor = 'rgba(0, 255, 0, 0.2)';
+        this.timeSlider.max = this.lightingSystem.getDayLength().toString();
+        this.timeSlider.value = '0';
+        this.timeSlider.style.width = '200px';
+        
+        timeContainer.appendChild(timeLabel);
+        timeContainer.appendChild(this.timeSlider);
+        
+        // Add event listeners
+        this.seedInput.addEventListener('change', () => {
+            const seed = parseInt(this.seedInput.value);
+            if (!isNaN(seed)) {
+                this.terrainGenerator.setSeed(seed);
+            }
         });
-
-        this.regenerateButton.addEventListener('mouseleave', () => {
-            this.regenerateButton.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        
+        this.randomSeedButton.addEventListener('click', () => {
+            const randomSeed = Math.floor(Math.random() * 1000000);
+            this.seedInput.value = randomSeed.toString();
+            this.terrainGenerator.setSeed(randomSeed);
         });
-
-        contentContainer.appendChild(this.regenerateButton);
-
-        // Add content container to main container
-        this.container.appendChild(contentContainer);
-
-        // Make the panel draggable
-        this.draggableUI = new DraggableUI(this.container, 'Day/Night Settings');
-
-        // Event listeners
+        
         this.timeSlider.addEventListener('input', () => {
             const time = parseFloat(this.timeSlider.value);
-            this.updateTimeDisplay(time);
-            onTimeChange(time);
+            this.lightingSystem.setTime(time);
         });
-
-        this.autoRotateCheckbox.addEventListener('change', () => {
-            onAutoRotateChange(this.autoRotateCheckbox.checked);
-        });
-
-        this.regenerateButton.addEventListener('click', onRegenerate);
-
+        
+        // Add elements to container
+        this.container.appendChild(seedContainer);
+        this.container.appendChild(timeContainer);
+        
+        // Add container to document
         document.body.appendChild(this.container);
-        this.updateTimeDisplay(0.25);
     }
 
-    public updateTime(time: number): void {
-        this.timeSlider.value = time.toString();
-        this.updateTimeDisplay(time);
-    }
-
-    private updateTimeDisplay(time: number): void {
-        const hours = Math.floor(time * 24);
-        const minutes = Math.floor((time * 24 - hours) * 60);
-        this.timeDisplay.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    public update(): void {
+        // Update time slider to match current time
+        this.timeSlider.value = this.lightingSystem.getTime().toString();
     }
 
     public dispose(): void {
