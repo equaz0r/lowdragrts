@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "postprocessing": "^6.37.1",
+    "simplex-noise": "^4.0.3",
     "simplex-noise-esm": "^2.5.0-esm.0",
     "three": "^0.174.0",
     "ts-loader": "^9.5.2",

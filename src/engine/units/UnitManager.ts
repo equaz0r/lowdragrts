@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Unit, UnitType } from './Unit';
-import { WorldManager } from '../voxel/WorldManager';
+import { WorldManager } from '../world/WorldManager';
 import { ProjectileManager } from '../combat/ProjectileManager';
 import { CommandVisualizer } from './CommandVisualizer';
 import { GameUI } from '../ui/GameUI';
@@ -45,15 +45,8 @@ export class UnitManager {
     }
 
     public createUnit(type: UnitType, position: THREE.Vector3): Unit {
-        const unit = new Unit(
-            this.nextUnitId++,
-            type,
-            this.scene,
-            this.worldManager,
-            this.projectileManager,
-            this.commandVisualizer
-        );
-        unit.position.copy(position);
+        const unit = new Unit(type, position);
+        unit.setWorldManager(this.worldManager);
         this.units.push(unit);
         this.scene.add(unit);
         return unit;
@@ -317,18 +310,17 @@ export class UnitManager {
     }
 
     private selectUnitsInBox(box: THREE.Box3): void {
-        // Clear previous selection
-        this.selectedUnits.forEach(unit => unit.setSelected(false));
-        this.selectedUnits.clear();
-
-        // Select units in box
-        this.units.forEach(unit => {
-            const position = unit.getPosition();
-            if (box.containsPoint(position)) {
-                unit.setSelected(true);
-                this.selectedUnits.add(unit);
-            }
+        // Find units within the selection box
+        const unitsInBox = this.units.filter(unit => {
+            const mesh = unit.getMesh();
+            if (!mesh) return false;
+            return box.containsPoint(mesh.position);
         });
+
+        // Update selection
+        this.selectedUnits.forEach(unit => unit.setSelected(false));
+        this.selectedUnits = new Set(unitsInBox);
+        this.selectedUnits.forEach(unit => unit.setSelected(true));
     }
 
     public updateHover(x: number, y: number): void {
@@ -339,12 +331,17 @@ export class UnitManager {
         // Update the picking ray with the camera and mouse position
         this.raycaster.setFromCamera(this.mouse, this.scene.userData.camera);
 
+        // Filter out null meshes and ensure we have valid Object3D instances
+        const validMeshes = this.units
+            .map(unit => unit.getMesh())
+            .filter((mesh): mesh is THREE.Mesh => mesh !== null);
+
         // Find intersected units
-        const intersects = this.raycaster.intersectObjects(this.units.map(unit => unit.getMesh()), true);
+        const intersects = this.raycaster.intersectObjects(validMeshes, true);
         
         // Find the first intersected unit
         const intersectedUnit = intersects.length > 0 
-            ? this.units.find(unit => unit.getMesh().id === intersects[0].object.id) || null
+            ? this.units.find(unit => unit.getMesh()?.id === intersects[0].object.id) || null
             : null;
 
         // Update hover state

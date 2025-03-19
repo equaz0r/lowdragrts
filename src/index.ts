@@ -1,5 +1,5 @@
 ﻿import * as THREE from 'three';
-import { WorldManager } from './engine/voxel/WorldManager';
+import { WorldManager } from './engine/world/WorldManager';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectsManager } from './engine/graphics/EffectsManager';
 import { ParticleSystem } from './engine/graphics/ParticleSystem';
@@ -17,6 +17,8 @@ import { SettingsManager, GameSettings } from './ui/SettingsManager';
 import { SettingsButton } from './ui/SettingsButton';
 import { EdgeDetection } from './engine/graphics/EdgeDetection';
 import { DayNightCycle } from './engine/environment/DayNightCycle';
+import { DebugPanel } from './engine/debug/DebugPanel';
+import { BloomEffect } from './engine/graphics/BloomEffect';
 
 export class Game implements GameInterface {
     private scene: THREE.Scene;
@@ -46,6 +48,13 @@ export class Game implements GameInterface {
     private settingsButton: SettingsButton;
     private edgeDetection: EdgeDetection;
     private dayNightCycle: DayNightCycle;
+    private spotlight: THREE.SpotLight;
+    private ambientLight: THREE.AmbientLight;
+    private debugPanel: DebugPanel;
+    private bloomEffect: BloomEffect;
+    private time: number = 0;
+    private autoRotate: boolean = false;
+    private useBloom: boolean = false;
 
     constructor() {
         console.log('Game constructor called');
@@ -53,54 +62,64 @@ export class Game implements GameInterface {
         // Scene setup
         this.scene = new THREE.Scene();
         
-        // Create skybox
+        // Add fog with better visibility
+        const fogColor = new THREE.Color(0x1a1a2a); // Darker blue instead of black
+        const fogNear = 200; // Start fading further out
+        const fogFar = 500; // Complete fade further out
+        this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+        
+        // Set background to match fog color
+        this.scene.background = fogColor;
+        
+        // Create skybox with better visibility
         const skyboxGeometry = new THREE.BoxGeometry(1000, 1000, 1000);
         const skyboxMaterials = [
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }), // Darker blue for better contrast
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
-            new THREE.MeshBasicMaterial({ color: 0x0a0a1a }),
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }), // Match fog color
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }),
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }),
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }),
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }),
+            new THREE.MeshBasicMaterial({ color: 0x1a1a2a }),
         ];
         const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterials);
         this.scene.add(skybox);
         
         // Add ambient light
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Reduced intensity for better contrast
+        const ambientLight = new THREE.AmbientLight(0x404040, 1.0); // Increased intensity
         this.scene.add(ambientLight);
         
         // Add directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Reduced intensity
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Increased intensity
         directionalLight.position.set(10, 10, 10);
         directionalLight.lookAt(0, 0, 0);
         this.scene.add(directionalLight);
         
         // Add hemisphere light for better overall illumination
-        const hemisphereLight = new THREE.HemisphereLight(0x404040, 0x202020, 0.3); // Reduced intensity
+        const hemisphereLight = new THREE.HemisphereLight(0x404040, 0x202020, 0.5); // Increased intensity
         hemisphereLight.position.set(0, 10, 0);
         this.scene.add(hemisphereLight);
         
         // Initialize day/night cycle
         this.dayNightCycle = new DayNightCycle(this.scene);
         
-        // Renderer setup
+        // Renderer setup with adjusted settings
         this.renderer = new THREE.WebGLRenderer({ 
             antialias: true,
-            alpha: false
+            alpha: true,
+            logarithmicDepthBuffer: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.2; // Slightly reduced exposure
+        this.renderer.toneMapping = THREE.LinearToneMapping;
+        this.renderer.toneMappingExposure = 1.5; // Increased exposure
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         document.body.appendChild(this.renderer.domElement);
         
         // Camera setup
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(0, 10, 20);
+        this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 2000);
+        this.camera.position.set(50, 50, 50);
         this.camera.lookAt(0, 0, 0);
         
         // Controls setup
@@ -108,7 +127,7 @@ export class Game implements GameInterface {
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
         this.controls.minDistance = 5;
-        this.controls.maxDistance = 50;
+        this.controls.maxDistance = 200;
         this.controls.maxPolarAngle = Math.PI; // Allow full vertical rotation
         this.controls.minPolarAngle = 0; // Allow looking straight down
         this.controls.target.set(0, 0, 0);
@@ -129,8 +148,8 @@ export class Game implements GameInterface {
         this.worldManager = new WorldManager(this.scene);
         this.effectsManager = new EffectsManager(this.scene, this.camera, this.renderer);
         this.debugUI = new DebugUI(
-            () => {}, // No-op for time update
-            () => {}, // No-op for auto-rotate
+            (time: number) => this.updateTime(time),
+            (enabled: boolean) => this.setAutoRotate(enabled),
             () => this.regenerateWorld()
         );
         
@@ -174,9 +193,9 @@ export class Game implements GameInterface {
         
         // Create test units
         console.log('Creating test units...');
-        this.unitManager.createUnit(UnitType.BASIC_ROBOT, new THREE.Vector3(0, 0, 0));
-        this.unitManager.createUnit(UnitType.HARVESTER, new THREE.Vector3(10, 0, 0));
-        this.unitManager.createUnit(UnitType.BUILDER, new THREE.Vector3(-10, 0, 0));
+        this.unitManager.createUnit(UnitType.WORKER, new THREE.Vector3(0, 0, 0));
+        this.unitManager.createUnit(UnitType.SOLDIER, new THREE.Vector3(10, 0, 0));
+        this.unitManager.createUnit(UnitType.TANK, new THREE.Vector3(-10, 0, 0));
         
         // Setup event listeners
         this.setupEventListeners();
@@ -187,6 +206,31 @@ export class Game implements GameInterface {
         
         this.isInitialized = true;
         console.log('Game initialization completed');
+
+        // Add minimal ambient light
+        this.ambientLight = new THREE.AmbientLight(0x000000, 0.1);
+        this.scene.add(this.ambientLight);
+
+        // Add spotlight for flashlight effect
+        this.spotlight = new THREE.SpotLight(0xffffff, 2.0);
+        this.spotlight.angle = Math.PI / 4; // 45 degrees
+        this.spotlight.penumbra = 0.1;
+        this.spotlight.decay = 1.5;
+        this.spotlight.distance = 256; // Match fog distance
+        this.spotlight.castShadow = true;
+        this.scene.add(this.spotlight);
+        this.scene.add(this.spotlight.target);
+
+        // Update spotlight position in animation loop
+        this.controls.addEventListener('change', () => {
+            this.updateSpotlight();
+        });
+
+        // Initialize debug panel
+        this.debugPanel = new DebugPanel(this.camera, this.worldManager);
+
+        // Initialize bloom effect
+        this.bloomEffect = new BloomEffect(this.scene, this.camera, this.renderer);
     }
 
     private setupEventListeners(): void {
@@ -205,29 +249,39 @@ export class Game implements GameInterface {
     private animate(): void {
         requestAnimationFrame(() => this.animate());
         
-        const delta = this.clock.getDelta();
+        const deltaTime = this.clock.getDelta();
         
         if (!this.isInitialized) return;
-
+        
         // Update managers
-        this.unitManager.update(delta);
-        this.projectileManager.update(delta);
+        this.unitManager.update(deltaTime);
+        this.projectileManager.update(deltaTime);
         this.worldManager.update();
         this.inputManager.update();
         
         // Update day/night cycle
         const time = (this.clock.getElapsedTime() % 600) / 600; // 10 minutes per day cycle
         this.dayNightCycle.updateSunPosition(time);
-
+        
         // Update UI
         this.unitManager.updateSelectedUnitsInfo();
         this.unitManager.updateScrapCounter();
-
+        
         // Update camera controls
         this.controls.update();
 
-        // Render with edge detection
-        this.edgeDetection.render();
+        // Update spotlight
+        this.updateSpotlight();
+
+        // Update debug panel
+        this.debugPanel.update(deltaTime);
+
+        // Render with or without bloom effect
+        if (this.useBloom) {
+            this.bloomEffect.render();
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 
     private handleSettingsChange(settings: GameSettings): void {
@@ -483,5 +537,35 @@ export class Game implements GameInterface {
                 this.gameUI.toggleHotkeyDisplay();
                 break;
         }
+    }
+
+    private updateSpotlight(): void {
+        // Get camera direction
+        const cameraDirection = new THREE.Vector3();
+        this.camera.getWorldDirection(cameraDirection);
+        
+        // Position spotlight slightly behind camera
+        this.spotlight.position.copy(this.camera.position);
+        
+        // Set spotlight target to point where camera is looking
+        const targetPosition = this.camera.position.clone().add(
+            cameraDirection.multiplyScalar(10)
+        );
+        this.spotlight.target.position.copy(targetPosition);
+    }
+
+    private updateTime(time: number): void {
+        this.time = time;
+        // Update any time-based effects here
+    }
+
+    private setAutoRotate(enabled: boolean): void {
+        this.autoRotate = enabled;
+    }
+
+    public dispose(): void {
+        // ... existing dispose code ...
+        this.bloomEffect.dispose();
+        // ... rest of existing code ...
     }
 }

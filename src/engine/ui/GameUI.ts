@@ -1,168 +1,162 @@
 import * as THREE from 'three';
 import { ControlMode } from '../controls/InputManager';
 import { UnitType } from '../units/Unit';
+import { DraggableUI } from './DraggableUI';
+import { Unit } from '../units/Unit';
 
 export class GameUI {
-    private container: HTMLDivElement;
-    private controlBar: HTMLDivElement;
-    private statusBar: HTMLDivElement;
-    private modeIndicator: HTMLDivElement;
-    private hotkeyDisplay: HTMLDivElement;
-    private selectedUnitsInfo: HTMLDivElement;
-    private cursorCoordinates: HTMLDivElement;
-    private actionIndicator: HTMLDivElement;
-    private cursorStyle: string;
-    private currentMode: string;
-    private unitInfo: HTMLDivElement | null;
-    private cursorStyleElement: HTMLStyleElement;
-    private scrapCounter: HTMLDivElement;
+    private container: HTMLElement;
+    private selectionBox: HTMLElement = document.createElement('div');
+    private unitInfo: HTMLElement = document.createElement('div');
+    private actionIndicator: HTMLElement = document.createElement('div');
+    private statusBar: HTMLElement = document.createElement('div');
+    private controlBar: HTMLElement = document.createElement('div');
+    private scrapCounter: HTMLElement = document.createElement('div');
+    private cursorCoordinates: HTMLElement = document.createElement('div');
+    private statusText: HTMLElement = document.createElement('div');
+    private draggableUI: DraggableUI = new DraggableUI(document.createElement('div'));
+    private currentMode: string = 'CAMERA';
+    private cursorStyle: string = 'default';
+    private cursorStyleElement: HTMLStyleElement = document.createElement('style');
 
     constructor() {
-        // Initialize all properties in constructor
         this.container = document.createElement('div');
-        this.container.className = 'game-ui';
-        this.controlBar = document.createElement('div');
-        this.statusBar = document.createElement('div');
-        this.modeIndicator = document.createElement('div');
-        this.hotkeyDisplay = document.createElement('div');
-        this.selectedUnitsInfo = document.createElement('div');
-        this.cursorCoordinates = document.createElement('div');
-        this.actionIndicator = document.createElement('div');
-        this.cursorStyle = 'default';
-        this.currentMode = 'CAMERA';
-        this.unitInfo = null;
-        this.cursorStyleElement = document.createElement('style');
-        this.scrapCounter = document.createElement('div');
+        this.container.id = 'game-ui';
+        this.container.style.position = 'fixed';
+        this.container.style.top = '0';
+        this.container.style.left = '0';
+        this.container.style.width = '100%';
+        this.container.style.height = '100%';
+        this.container.style.pointerEvents = 'none';
+        this.container.style.zIndex = '1000';
+        document.body.appendChild(this.container);
         document.head.appendChild(this.cursorStyleElement);
 
-        // Set up UI elements
         this.setupUI();
     }
 
     private setupUI(): void {
-        this.container = document.createElement('div');
-        this.container.className = 'game-ui';
-        
-        // Create unit info panel
-        this.unitInfo = document.createElement('div');
-        this.unitInfo.className = 'unit-info';
+        // Create selection box
+        this.selectionBox.style.position = 'absolute';
+        this.selectionBox.style.border = '2px solid #00ff00';
+        this.selectionBox.style.backgroundColor = 'rgba(0, 255, 0, 0.1)';
+        this.selectionBox.style.pointerEvents = 'none';
+        this.selectionBox.style.display = 'none';
+        this.container.appendChild(this.selectionBox);
+
+        // Create unit info display
+        this.unitInfo.style.position = 'absolute';
+        this.unitInfo.style.padding = '10px';
+        this.unitInfo.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.unitInfo.style.color = '#00ff00';
+        this.unitInfo.style.fontFamily = 'Consolas, monospace';
+        this.unitInfo.style.fontSize = '12px';
+        this.unitInfo.style.pointerEvents = 'none';
+        this.unitInfo.style.display = 'none';
         this.container.appendChild(this.unitInfo);
 
-        // Create styles
-        const styleElement = document.createElement('style');
-        styleElement.textContent = `
-            .game-ui {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 1000;
-            }
-            .game-ui * {
-                pointer-events: auto;
-            }
-            .selection-box {
-                position: absolute;
-                border: 2px solid #00ff00;
-                background-color: rgba(0, 255, 0, 0.1);
-                pointer-events: none;
-            }
-            .unit-info {
-                position: absolute;
-                bottom: 20px;
-                left: 20px;
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 10px;
-                border-radius: 5px;
-                font-family: Arial, sans-serif;
-            }
-            .action-indicator {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 10px 20px;
-                border-radius: 5px;
-                font-family: Arial, sans-serif;
-                font-size: 16px;
-                display: none;
-            }
-        `;
-        document.head.appendChild(styleElement);
-
-        // Create all UI elements
-        this.createStatusBar();
-        this.createControlBar();
-        this.createHotkeyDisplay();
-        this.createCursorCoordinates();
-        this.createCursorStyles();
-
-        // Add action indicator
-        this.actionIndicator = document.createElement('div');
-        this.actionIndicator.className = 'action-indicator';
+        // Create action indicator
+        this.actionIndicator.style.position = 'absolute';
+        this.actionIndicator.style.padding = '5px';
+        this.actionIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.actionIndicator.style.color = '#00ff00';
+        this.actionIndicator.style.fontFamily = 'Consolas, monospace';
+        this.actionIndicator.style.fontSize = '12px';
+        this.actionIndicator.style.pointerEvents = 'none';
+        this.actionIndicator.style.display = 'none';
         this.container.appendChild(this.actionIndicator);
 
-        // Add scrap counter
-        this.scrapCounter = document.createElement('div');
-        this.scrapCounter.className = 'scrap-counter';
-        this.container.appendChild(this.scrapCounter);
-
-        document.body.appendChild(this.container);
-    }
-
-    private createStatusBar(): void {
-        this.statusBar = document.createElement('div');
+        // Create status bar
         this.statusBar.style.position = 'fixed';
         this.statusBar.style.top = '10px';
         this.statusBar.style.left = '10px';
-        this.statusBar.style.right = '10px';
-        this.statusBar.style.height = '30px';
-        this.statusBar.style.display = 'flex';
-        this.statusBar.style.justifyContent = 'space-between';
-        this.statusBar.style.alignItems = 'center';
-        this.statusBar.style.padding = '0 20px';
-        this.statusBar.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.statusBar.style.color = 'white';
-        this.statusBar.style.fontFamily = 'Arial, sans-serif';
-        this.statusBar.style.fontSize = '14px';
-        this.statusBar.style.borderRadius = '5px';
+        this.statusBar.style.padding = '10px';
+        this.statusBar.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.statusBar.style.color = '#00ff00';
+        this.statusBar.style.fontFamily = 'Consolas, monospace';
+        this.statusBar.style.fontSize = '12px';
+        this.statusBar.style.pointerEvents = 'auto';
         this.statusBar.style.zIndex = '1001';
-
-        // Mode indicator
-        this.modeIndicator = document.createElement('div');
-        this.modeIndicator.textContent = 'Mode: Unit Control';
-        this.statusBar.appendChild(this.modeIndicator);
-
-        // Selected units info
-        this.selectedUnitsInfo = document.createElement('div');
-        this.selectedUnitsInfo.textContent = 'Selected: 0 units';
-        this.statusBar.appendChild(this.selectedUnitsInfo);
-
-        // Settings button
-        const settingsButton = this.createButton('⚙️ Settings', 'settings');
-        settingsButton.style.marginLeft = '20px';
-        this.statusBar.appendChild(settingsButton);
-
+        this.statusBar.style.border = '1px solid #00ff00';
+        this.statusBar.style.borderRadius = '5px';
         this.container.appendChild(this.statusBar);
-    }
 
-    private createControlBar(): void {
-        this.controlBar = document.createElement('div');
+        // Create control bar
         this.controlBar.style.position = 'fixed';
-        this.controlBar.style.bottom = '10px';
+        this.controlBar.style.bottom = '20px';
         this.controlBar.style.left = '50%';
         this.controlBar.style.transform = 'translateX(-50%)';
+        this.controlBar.style.padding = '10px';
+        this.controlBar.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.controlBar.style.color = '#00ff00';
+        this.controlBar.style.fontFamily = 'Consolas, monospace';
+        this.controlBar.style.fontSize = '12px';
+        this.controlBar.style.pointerEvents = 'auto';
+        this.controlBar.style.zIndex = '1001';
+        this.controlBar.style.border = '1px solid #00ff00';
+        this.controlBar.style.borderRadius = '5px';
         this.controlBar.style.display = 'flex';
         this.controlBar.style.gap = '10px';
-        this.controlBar.style.padding = '10px';
-        this.controlBar.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.controlBar.style.borderRadius = '5px';
-        this.controlBar.style.zIndex = '1001';
+        this.controlBar.style.flexWrap = 'nowrap';
+        this.controlBar.style.width = 'auto';
+        this.controlBar.style.minWidth = 'fit-content';
+        this.controlBar.style.maxWidth = '80%';
+        this.controlBar.style.height = 'auto';
+        this.controlBar.style.minHeight = 'fit-content';
+        this.controlBar.style.maxHeight = 'none';
+        this.container.appendChild(this.controlBar);
+
+        // Create scrap counter
+        this.scrapCounter.style.position = 'fixed';
+        this.scrapCounter.style.top = '10px';
+        this.scrapCounter.style.right = '10px';
+        this.scrapCounter.style.padding = '10px';
+        this.scrapCounter.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.scrapCounter.style.color = '#00ff00';
+        this.scrapCounter.style.fontFamily = 'Consolas, monospace';
+        this.scrapCounter.style.fontSize = '12px';
+        this.scrapCounter.style.pointerEvents = 'auto';
+        this.scrapCounter.style.zIndex = '1001';
+        this.scrapCounter.style.border = '1px solid #00ff00';
+        this.scrapCounter.style.borderRadius = '5px';
+        this.container.appendChild(this.scrapCounter);
+
+        // Create cursor coordinates
+        this.cursorCoordinates.style.position = 'fixed';
+        this.cursorCoordinates.style.bottom = '10px';
+        this.cursorCoordinates.style.right = '10px';
+        this.cursorCoordinates.style.padding = '10px';
+        this.cursorCoordinates.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.cursorCoordinates.style.color = '#00ff00';
+        this.cursorCoordinates.style.fontFamily = 'Consolas, monospace';
+        this.cursorCoordinates.style.fontSize = '12px';
+        this.cursorCoordinates.style.pointerEvents = 'auto';
+        this.cursorCoordinates.style.zIndex = '1001';
+        this.cursorCoordinates.style.border = '1px solid #00ff00';
+        this.cursorCoordinates.style.borderRadius = '5px';
+        this.container.appendChild(this.cursorCoordinates);
+
+        // Create status text display
+        this.statusText.style.position = 'fixed';
+        this.statusText.style.top = '20px';
+        this.statusText.style.left = '50%';
+        this.statusText.style.transform = 'translateX(-50%)';
+        this.statusText.style.padding = '10px 20px';
+        this.statusText.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.statusText.style.color = '#ffffff';
+        this.statusText.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        this.statusText.style.fontSize = '16px';
+        this.statusText.style.fontWeight = 'bold';
+        this.statusText.style.pointerEvents = 'none';
+        this.statusText.style.zIndex = '1001';
+        this.statusText.style.border = '1px solid #00ff00';
+        this.statusText.style.borderRadius = '5px';
+        this.statusText.style.textAlign = 'center';
+        this.statusText.style.whiteSpace = 'nowrap';
+        this.container.appendChild(this.statusText);
+
+        // Make control bar draggable
+        this.draggableUI = new DraggableUI(this.controlBar, 'Unit Controls');
 
         // Add control buttons
         const buttons = [
@@ -175,106 +169,49 @@ export class GameUI {
         ];
 
         buttons.forEach(({ text, action }) => {
-            const button = this.createButton(text, action);
+            const button = this.createButton(text, () => {
+                const event = new CustomEvent('gameAction', {
+                    detail: { action: action }
+                });
+                document.dispatchEvent(event);
+            });
             this.controlBar.appendChild(button);
         });
-
-        this.container.appendChild(this.controlBar);
     }
 
-    private createButton(text: string, action: string): HTMLButtonElement {
+    public createButton(text: string, onClick: () => void): HTMLButtonElement {
         const button = document.createElement('button');
         button.textContent = text;
         button.style.padding = '8px 16px';
-        button.style.backgroundColor = '#444';
-        button.style.color = 'white';
-        button.style.border = '1px solid #666';
-        button.style.borderRadius = '4px';
+        button.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        button.style.color = '#00ff00';
+        button.style.border = '1px solid #00ff00';
+        button.style.borderRadius = '3px';
         button.style.cursor = 'pointer';
-        button.style.fontSize = '14px';
-        button.dataset.action = action;
-
-        button.addEventListener('mouseover', () => {
-            button.style.backgroundColor = '#555';
+        button.style.fontFamily = 'Consolas, monospace';
+        button.style.fontSize = '12px';
+        button.style.whiteSpace = 'nowrap';
+        button.style.minWidth = 'fit-content';
+        button.style.height = 'auto';
+        button.style.minHeight = 'fit-content';
+        button.style.maxHeight = 'none';
+        button.style.flex = '0 0 auto';
+        button.style.pointerEvents = 'auto';
+        
+        button.addEventListener('mouseenter', () => {
+            button.style.backgroundColor = 'rgba(0, 255, 0, 0.2)';
         });
-        button.addEventListener('mouseout', () => {
-            button.style.backgroundColor = '#444';
-        });
-        button.addEventListener('mousedown', () => {
-            button.style.backgroundColor = '#333';
-        });
-        button.addEventListener('mouseup', () => {
-            button.style.backgroundColor = '#555';
-        });
-
-        // Add click handler
-        button.addEventListener('click', () => {
-            const event = new CustomEvent('gameAction', {
-                detail: { action: action }
-            });
-            document.dispatchEvent(event);
+        
+        button.addEventListener('mouseleave', () => {
+            button.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
         });
 
+        button.addEventListener('click', onClick);
         return button;
     }
 
-    private createHotkeyDisplay(): void {
-        this.hotkeyDisplay = document.createElement('div');
-        this.hotkeyDisplay.style.position = 'fixed';
-        this.hotkeyDisplay.style.top = '10px';
-        this.hotkeyDisplay.style.right = '10px';
-        this.hotkeyDisplay.style.padding = '10px';
-        this.hotkeyDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.hotkeyDisplay.style.color = 'white';
-        this.hotkeyDisplay.style.fontFamily = 'monospace';
-        this.hotkeyDisplay.style.fontSize = '12px';
-        this.hotkeyDisplay.style.borderRadius = '5px';
-        this.hotkeyDisplay.style.display = 'none';
-
-        const hotkeyList = [
-            'Space - Toggle Camera/Unit Mode',
-            'Ctrl + 1-9 - Set Control Group',
-            '1-9 - Select Control Group',
-            'A - Attack Mode',
-            'S - Stop',
-            'H - Hold Position',
-            'P - Patrol',
-            'Esc - Cancel Action'
-        ];
-
-        hotkeyList.forEach(hotkey => {
-            const div = document.createElement('div');
-            div.textContent = hotkey;
-            this.hotkeyDisplay.appendChild(div);
-        });
-
-        this.container.appendChild(this.hotkeyDisplay);
-    }
-
-    private createCursorCoordinates(): void {
-        this.cursorCoordinates = document.createElement('div');
-        this.cursorCoordinates.style.position = 'fixed';
-        this.cursorCoordinates.style.bottom = '50px'; // Moved up to avoid overlap with control bar
-        this.cursorCoordinates.style.right = '10px';
-        this.cursorCoordinates.style.padding = '5px 10px';
-        this.cursorCoordinates.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.cursorCoordinates.style.color = 'white';
-        this.cursorCoordinates.style.fontFamily = 'monospace';
-        this.cursorCoordinates.style.fontSize = '12px';
-        this.cursorCoordinates.style.borderRadius = '3px';
-        this.cursorCoordinates.style.zIndex = '1001';
-
-        this.container.appendChild(this.cursorCoordinates);
-    }
-
-    private createCursorStyles(): void {
-        this.cursorStyleElement = document.createElement('style');
-        document.head.appendChild(this.cursorStyleElement);
-        this.updateCursorStyle('default');
-    }
-
     public updateModeIndicator(): void {
-        this.modeIndicator.textContent = `Mode: ${this.currentMode}`;
+        this.statusBar.textContent = `Mode: ${this.currentMode}`;
     }
 
     public setMode(mode: string): void {
@@ -295,36 +232,27 @@ export class GameUI {
 
     private updateCursorStyle(cursorType: string): void {
         this.cursorStyle = cursorType;
-        if (this.cursorStyleElement) {
-            this.cursorStyleElement.textContent = `
-                body { 
-                    cursor: ${cursorType} !important;
-                }
-            `;
-        }
+        this.cursorStyleElement.textContent = `
+            body { 
+                cursor: ${cursorType} !important;
+            }
+        `;
     }
 
-    public updateSelectedUnitsInfo(selectedUnits: { type: UnitType; count: number; health?: number; maxHealth?: number }[]): void {
+    public updateSelectedUnitsInfo(selectedUnits: { type: string; count: number; health?: number; maxHealth?: number }[]): void {
         if (selectedUnits.length === 0) {
-            this.selectedUnitsInfo.textContent = 'No units selected';
+            this.statusBar.textContent = 'No units selected';
             return;
         }
 
-        let info = 'Selected Units:\n';
-        selectedUnits.forEach(unit => {
-            info += `${unit.type}: ${unit.count}\n`;
-        });
+        const info = selectedUnits.map(unit => {
+            const healthInfo = unit.health !== undefined && unit.maxHealth !== undefined
+                ? ` (${Math.round(unit.health)}/${unit.maxHealth})`
+                : '';
+            return `${unit.count}x ${unit.type}${healthInfo}`;
+        }).join(', ');
 
-        // Add health info for single unit selection
-        if (selectedUnits.length === 1) {
-            const unit = selectedUnits[0];
-            if (unit.health !== undefined && unit.maxHealth !== undefined) {
-                const healthPercent = (unit.health / unit.maxHealth) * 100;
-                info += `\nHealth: ${healthPercent.toFixed(1)}%`;
-            }
-        }
-
-        this.selectedUnitsInfo.textContent = info;
+        this.statusBar.textContent = info;
     }
 
     public updateCursorPosition(x: number, y: number, z: number): void {
@@ -333,18 +261,7 @@ export class GameUI {
     }
 
     public toggleHotkeyDisplay(): void {
-        this.hotkeyDisplay.style.display = 
-            this.hotkeyDisplay.style.display === 'none' ? 'block' : 'none';
-    }
-
-    public dispose(): void {
-        document.body.removeChild(this.container);
-    }
-
-    public updateUnitInfo(info: string): void {
-        if (this.unitInfo) {
-            this.unitInfo.textContent = info;
-        }
+        // Removed hotkey display functionality
     }
 
     public updateCursorCoordinates(coordinates: THREE.Vector3): void {
@@ -353,5 +270,73 @@ export class GameUI {
 
     public updateScrapCounter(scrap: number): void {
         this.scrapCounter.textContent = `Scrap: ${scrap}`;
+    }
+
+    public showActionIndicator(action: string): void {
+        this.actionIndicator.textContent = action;
+        this.actionIndicator.style.display = 'block';
+    }
+
+    public hideActionIndicator(): void {
+        this.actionIndicator.style.display = 'none';
+    }
+
+    public updateSelectionBox(startX: number, startY: number, endX: number, endY: number): void {
+        const left = Math.min(startX, endX);
+        const top = Math.min(startY, endY);
+        const width = Math.abs(endX - startX);
+        const height = Math.abs(endY - startY);
+
+        this.selectionBox.style.left = `${left}px`;
+        this.selectionBox.style.top = `${top}px`;
+        this.selectionBox.style.width = `${width}px`;
+        this.selectionBox.style.height = `${height}px`;
+        this.selectionBox.style.display = 'block';
+    }
+
+    public hideSelectionBox(): void {
+        this.selectionBox.style.display = 'none';
+    }
+
+    public showUnitInfo(unit: Unit): void {
+        const health = unit.getHealth();
+        const maxHealth = unit.getMaxHealth();
+        this.unitInfo.textContent = `${unit.getType()} (${Math.round(health)}/${maxHealth})`;
+        this.unitInfo.style.display = 'block';
+    }
+
+    public hideUnitInfo(): void {
+        this.unitInfo.style.display = 'none';
+    }
+
+    public updateStatusText(mode: string, action: string = ''): void {
+        let text = mode;
+        if (action) {
+            text += ` - ${action}`;
+        }
+        this.statusText.textContent = text;
+        this.statusText.style.display = text ? 'block' : 'none';
+    }
+
+    public updateUnitInfo(selectedUnits: Unit[]): void {
+        if (!selectedUnits || selectedUnits.length === 0) {
+            this.statusText.textContent = '';
+            this.statusText.style.display = 'none';
+            return;
+        }
+
+        const info = selectedUnits.map(unit => {
+            const type = unit.getType();
+            const health = unit.getHealth();
+            const maxHealth = unit.getMaxHealth();
+            return `${type} (${health}/${maxHealth} HP)`;
+        }).join(' | ');
+
+        this.statusText.textContent = info;
+        this.statusText.style.display = 'block';
+    }
+
+    public dispose(): void {
+        document.body.removeChild(this.container);
     }
 } 
