@@ -16,106 +16,51 @@ export class GridSystem {
     }
 
     private initialize(): void {
-        this.createGridMaterial();
         this.createGridLines();
-        this.createGridMesh();
-    }
-
-    private createGridMaterial(): void {
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                color: { value: new THREE.Color(0xff6600) }, // Neon orange
-                time: { value: 0 }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform vec3 color;
-                uniform float time;
-                varying vec2 vUv;
-
-                void main() {
-                    float gridSize = 64.0;
-                    vec2 grid = fract(vUv * gridSize);
-                    float lineWidth = 0.05;
-                    
-                    float xLine = step(1.0 - lineWidth, grid.x) + step(1.0 - lineWidth, 1.0 - grid.x);
-                    float zLine = step(1.0 - lineWidth, grid.y) + step(1.0 - lineWidth, 1.0 - grid.y);
-                    
-                    float alpha = xLine + zLine;
-                    alpha = min(alpha, 1.0);
-                    
-                    // Add subtle pulse
-                    float pulse = sin(time * 2.0) * 0.1 + 0.9;
-                    alpha *= pulse;
-                    
-                    gl_FragColor = vec4(color, alpha);
-                }
-            `,
-            transparent: true,
-            side: THREE.DoubleSide
-        });
-
-        this.material = material;
     }
 
     private createGridLines(): void {
-        const points: number[] = [];
+        const gridSize = this.gridSize;
+        const cellSize = this.cellSize;
+        const totalSize = gridSize * cellSize;
+        const halfSize = totalSize / 2;
+
+        const vertices: number[] = [];
         const colors: number[] = [];
-        const orange = new THREE.Color(0xff6600);
+        const color = new THREE.Color(0xff6600); // Neon orange
 
-        // Create vertical lines
-        for (let i = -this.gridSize / 2; i <= this.gridSize / 2; i++) {
-            const x = i * this.cellSize;
-            points.push(x, 0, -this.totalSize / 2);
-            points.push(x, 0, this.totalSize / 2);
-            colors.push(orange.r, orange.g, orange.b);
-            colors.push(orange.r, orange.g, orange.b);
-        }
+        // Create grid lines
+        for (let i = 0; i <= gridSize; i++) {
+            const pos = (i * cellSize) - halfSize;
 
-        // Create horizontal lines
-        for (let i = -this.gridSize / 2; i <= this.gridSize / 2; i++) {
-            const z = i * this.cellSize;
-            points.push(-this.totalSize / 2, 0, z);
-            points.push(this.totalSize / 2, 0, z);
-            colors.push(orange.r, orange.g, orange.b);
-            colors.push(orange.r, orange.g, orange.b);
+            // Vertical lines (along Z)
+            vertices.push(pos, 0, -halfSize);
+            vertices.push(pos, 0, halfSize);
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
+
+            // Horizontal lines (along X)
+            vertices.push(-halfSize, 0, pos);
+            vertices.push(halfSize, 0, pos);
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
         }
 
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-        const material = new THREE.LineBasicMaterial({ 
+        const material = new THREE.LineBasicMaterial({
+            color: 0xff6600,
+            linewidth: 1,
             vertexColors: true,
             transparent: true,
-            opacity: 0.3,
-            linewidth: 1
+            opacity: 1.0
         });
 
         this.gridLines = new THREE.LineSegments(geometry, material);
-        this.gridLines.renderOrder = 9999;
+        this.gridLines.renderOrder = 1;
         this.scene.add(this.gridLines);
-    }
-
-    private createGridMesh(): void {
-        if (this.material) {
-            const gridGeometry = new THREE.PlaneGeometry(
-                this.totalSize,
-                this.totalSize,
-                this.gridSize * 2,
-                this.gridSize * 2
-            );
-            this.gridMesh = new THREE.Mesh(gridGeometry, this.material as THREE.Material);
-            this.gridMesh.rotation.x = -Math.PI / 2;
-            this.gridMesh.renderOrder = 9999;
-            this.scene.add(this.gridMesh);
-        }
     }
 
     public update(time: number): void {
@@ -146,15 +91,6 @@ export class GridSystem {
                 this.gridLines.material.forEach(material => material.dispose());
             }
             this.gridLines = null;
-        }
-        if (this.gridMesh) {
-            this.scene.remove(this.gridMesh);
-            this.gridMesh.geometry.dispose();
-            this.gridMesh = null;
-        }
-        if (this.material) {
-            this.material.dispose();
-            this.material = null;
         }
     }
 } 

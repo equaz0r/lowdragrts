@@ -65,16 +65,16 @@ export class LightingSystem {
     }
 
     public update(deltaTime: number): void {
-        this.time += deltaTime;
+        this.time += deltaTime * 0.01; // Slow down time by 100x
         if (this.time >= this.dayLength) {
             this.time = 0;
         }
 
         // Calculate sun position in a circular arc
-        const radius = 1000; // Increased radius for better visibility
-        const x = Math.sin(this.time) * radius;
-        const y = Math.cos(this.time) * radius * 0.5; // Flatten the arc
-        const z = Math.cos(this.time) * radius;
+        const radius = 2000;
+        const x = Math.sin(this.time * 0.0001) * radius; // Very slow movement
+        const y = Math.abs(Math.cos(this.time * 0.0001)) * radius * 0.7;
+        const z = Math.cos(this.time * 0.0001) * radius;
 
         // Update sun light position
         this.sunLight.position.set(x, y, z);
@@ -82,12 +82,12 @@ export class LightingSystem {
 
         // Update light sphere position
         if (this.lightSphere) {
-            this.lightSphere.position.set(x, y, z);
+            this.lightSphere.position.copy(this.sunLight.position);
             
             // Update light sphere color based on time
-            const baseColor = new THREE.Color(0x4a0080); // Deep purple
-            const glowColor = new THREE.Color(0x0000ff); // Deep blue
-            const t = (Math.sin(this.time) + 1) / 2; // Normalize to 0-1
+            const baseColor = new THREE.Color(0x4a0080);
+            const glowColor = new THREE.Color(0x0000ff);
+            const t = (Math.sin(this.time * 0.0001) + 1) / 2;
             const color = baseColor.clone().lerp(glowColor, t);
             
             if (this.lightSphere.material instanceof THREE.ShaderMaterial) {
@@ -96,7 +96,7 @@ export class LightingSystem {
         }
 
         // Update ambient light intensity based on time
-        const ambientIntensity = Math.max(0.2, Math.sin(this.time) * 0.3 + 0.5);
+        const ambientIntensity = Math.max(0.2, Math.sin(this.time * 0.0001) * 0.3 + 0.5);
         this.ambientLight.intensity = ambientIntensity;
 
         // Update light intensity and color based on time

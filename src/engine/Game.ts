@@ -65,22 +65,23 @@ export class Game {
     private animate(): void {
         requestAnimationFrame(() => this.animate());
 
-        const currentTime = this.clock.getElapsedTime();
-        const deltaTime = currentTime - this.lastTime;
-        this.lastTime = currentTime;
+        const time = performance.now() * 0.001; // Convert to seconds
 
-        // Update systems
-        if (this.controls) {
-            this.controls.update();
+        // Update terrain
+        if (this.terrainGenerator) {
+            this.terrainGenerator.update(time);
         }
+
+        // Update grid
+        if (this.gridSystem) {
+            this.gridSystem.update(time);
+        }
+
+        // Update lighting
         if (this.lightingSystem) {
-            this.lightingSystem.update(deltaTime);
-        }
-        if (this.debugUI) {
-            this.debugUI.update();
+            this.lightingSystem.update(time);
         }
 
-        // Render
         this.renderer.render(this.scene, this.camera);
     }
 
