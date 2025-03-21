@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GridSystem } from './terrain/GridSystem';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
-import { DebugUI } from './ui/DebugUI';
 
 export class Game {
     private scene: THREE.Scene;
@@ -13,7 +12,6 @@ export class Game {
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
     private lightingSystem: LightingSystem | null = null;
-    private debugUI: DebugUI | null = null;
     private clock: THREE.Clock;
     private lastTime: number = 0;
 
@@ -35,23 +33,18 @@ export class Game {
         document.body.appendChild(this.renderer.domElement);
 
         // Setup camera
-        this.camera.position.set(1000, 1000, 1000);
+        this.camera.position.set(100, 100, 100);
         this.camera.lookAt(0, 0, 0);
 
         // Setup controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        this.controls.screenSpacePanning = false;
-        this.controls.minDistance = 100;
-        this.controls.maxDistance = 5000;
-        this.controls.maxPolarAngle = Math.PI / 2;
 
         // Initialize systems
         this.gridSystem = new GridSystem(this.scene);
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem);
-        this.lightingSystem = new LightingSystem(this.scene);
-        this.debugUI = new DebugUI(this.terrainGenerator, this.lightingSystem);
+        this.lightingSystem = new LightingSystem(this.scene, this.camera);
     }
 
     private setupEventListeners(): void {
@@ -66,37 +59,33 @@ export class Game {
         requestAnimationFrame(() => this.animate());
 
         const time = performance.now() * 0.001; // Convert to seconds
+        const deltaTime = time - this.lastTime;
+        this.lastTime = time;
 
         // Update terrain
         if (this.terrainGenerator) {
             this.terrainGenerator.update(time);
         }
 
-        // Update grid
-        if (this.gridSystem) {
-            this.gridSystem.update(time);
-        }
-
         // Update lighting
         if (this.lightingSystem) {
-            this.lightingSystem.update(time);
+            this.lightingSystem.update(deltaTime);
+        }
+
+        // Update controls
+        if (this.controls) {
+            this.controls.update();
         }
 
         this.renderer.render(this.scene, this.camera);
     }
 
     public dispose(): void {
-        if (this.gridSystem) {
-            this.gridSystem.dispose();
-        }
         if (this.terrainGenerator) {
             this.terrainGenerator.dispose();
         }
         if (this.lightingSystem) {
             this.lightingSystem.dispose();
-        }
-        if (this.debugUI) {
-            this.debugUI.dispose();
         }
         this.renderer.dispose();
         document.body.removeChild(this.renderer.domElement);

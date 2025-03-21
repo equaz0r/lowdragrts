@@ -12,17 +12,37 @@ export class TerrainGenerator {
     private readonly cellsPerChunk: number = 32;
     private readonly chunkSize: number;
     private p: number[] = [];  // Permutation table for noise generation
+    private sunLightPosition: THREE.Vector3;
 
     constructor(scene: THREE.Scene, gridSystem: GridSystem) {
         this.scene = scene;
         this.gridSystem = gridSystem;
         this.chunkSize = gridSystem.getCellSize();
+        this.sunLightPosition = new THREE.Vector3(100, 100, -100);
+        
+        // Find camera in scene and enable layers
+        const camera = this.scene.children.find(child => child instanceof THREE.Camera) as THREE.Camera;
+        if (camera) {
+            camera.layers.enable(0);  // Terrain layer
+            console.log('Camera layers enabled:', {
+                layers: camera.layers,
+                camera: camera
+            });
+        } else {
+            console.warn('No camera found in scene');
+        }
+        
         this.initialize();
     }
 
     private initialize(): void {
+        // Create noise texture first
         this.createNoiseTexture();
+        
+        // Create terrain material
         this.createTerrainMaterial();
+        
+        // Generate terrain
         this.generateTerrain();
     }
 
@@ -121,26 +141,58 @@ export class TerrainGenerator {
     private createTerrainMaterial(): void {
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                faceColor: { value: new THREE.Color(0x1a1a2e) },
-                edgeColorGround: { value: new THREE.Color(0xff8800) }, // Brighter orange for ground level
-                edgeColorHeight: { value: new THREE.Color(0x00ff66) }, // Green for height
-                coreColorGround: { value: new THREE.Color(0xffffff) }, // White core for ground
-                coreColorHeight: { value: new THREE.Color(0xffffff) }, // White core for height
-                glowIntensity: { value: 1.5 },
-                groundGlowIntensity: { value: 2.5 }, // Separate intensity for ground
-                cellSize: { value: this.chunkSize }, // Add cell size for grid calculation
-                time: { value: 0.0 }
+                faceColor: { value: new THREE.Color(0x020205) },
+                edgeColorGround: { value: new THREE.Color(0xff6600) },
+                edgeColorHeight: { value: new THREE.Color(0x88ff22) },
+                coreColorGround: { value: new THREE.Color(0xfff7b1) },
+                coreColorHeight: { value: new THREE.Color(0xe8ffd8) },
+                glowIntensity: { value: 0.4 },
+                groundGlowIntensity: { value: 0.85 },
+                cellSize: { value: this.chunkSize },
+                time: { value: 0.0 },
+                highlightColor: { value: new THREE.Color(0xff6600) },
+                sheenColor: { value: new THREE.Color(0xff00ff) },
+                sunPosition: { value: this.sunLightPosition.clone() },
+                sunIntensity: { value: 12.0 },
+                shadowSoftness: { value: 0.3 },
+                shadowIntensity: { value: 0.95 },
+                sheenIntensity: { value: 0.8 },
+                glowFalloff: { value: 0.0001 },
+                lightColor: { value: new THREE.Color(0xffffff) }
             },
             vertexShader: `
                 attribute vec3 barycentric;
+                uniform vec3 sunPosition;
+                
                 varying vec3 vPosition;
                 varying vec3 vNormal;
                 varying vec3 vBarycentric;
+                varying vec3 vViewDir;
+                varying vec3 vSunDir;
+                varying float vSunDistance;
+                varying float vHeight;
+                varying vec3 vWorldNormal;
                 
                 void main() {
-                    vPosition = position;
-                    vNormal = normalize(normalMatrix * normal);
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vPosition = worldPosition.xyz;
+                    vHeight = position.y;
+                    
+                    // Correctly transform normal to world space
+                    mat3 normalMatrix = transpose(inverse(mat3(modelMatrix)));
+                    vWorldNormal = normalize(normalMatrix * normal);
+                    vNormal = vWorldNormal;  // Use world space normal
+                    
                     vBarycentric = barycentric;
+                    
+                    // Calculate view direction in world space
+                    vViewDir = normalize(cameraPosition - worldPosition.xyz);
+                    
+                    // Calculate sun direction in world space
+                    vec3 toSun = sunPosition - worldPosition.xyz;
+                    vSunDistance = length(toSun);
+                    vSunDir = normalize(toSun);
+                    
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
@@ -154,92 +206,152 @@ export class TerrainGenerator {
                 uniform float groundGlowIntensity;
                 uniform float cellSize;
                 uniform float time;
+                uniform vec3 highlightColor;
+                uniform vec3 sheenColor;
+                uniform vec3 sunPosition;
+                uniform float sunIntensity;
+                uniform float shadowSoftness;
+                uniform float shadowIntensity;
+                uniform float sheenIntensity;
+                uniform float glowFalloff;
+                uniform vec3 lightColor;
                 
                 varying vec3 vPosition;
                 varying vec3 vNormal;
                 varying vec3 vBarycentric;
+                varying vec3 vViewDir;
+                varying vec3 vSunDir;
+                varying float vSunDistance;
+                varying float vHeight;
+                varying vec3 vWorldNormal;
                 
                 float getGridEdge(vec3 pos) {
-                    // Calculate distance to nearest grid line
                     vec2 grid = abs(mod(pos.xz, cellSize) - cellSize * 0.5) / cellSize;
                     float distToGrid = min(grid.x, grid.y);
+                    return 1.0 - smoothstep(0.0, 0.035, distToGrid);
+                }
+
+                float getShadow(vec3 pos, vec3 normal) {
+                    float shadow = 1.0;
+                    // Use full sun direction vector instead of flattening to XZ
+                    float shadowStrength = max(dot(normal, vSunDir), 0.0);
                     
-                    // Create sharp grid lines with glow
-                    return 1.0 - smoothstep(0.0, 0.05, distToGrid);
+                    shadow = smoothstep(0.0, shadowSoftness, shadowStrength);
+                    shadow = pow(shadow, 1.2);
+                    
+                    return mix(1.0 - shadowIntensity, 1.0, shadow);
+                }
+
+                vec3 getMetallicSheen(vec3 baseColor, float specular) {
+                    // Calculate half vector between sun and view directions
+                    vec3 halfDir = normalize(vSunDir + vViewDir);
+                    
+                    // Calculate fresnel based on view angle
+                    float fresnel = pow(1.0 - max(dot(vWorldNormal, vViewDir), 0.0), 1.2);
+                    fresnel = mix(0.2, 1.0, fresnel);
+                    
+                    // Calculate light attenuation with distance
+                    float attenuation = sunIntensity / (1.0 + vSunDistance * glowFalloff);
+                    
+                    // Get shadow factor
+                    float shadow = getShadow(vPosition, vWorldNormal);
+                    
+                    // Calculate specular highlight
+                    float specPower = pow(max(dot(vWorldNormal, halfDir), 0.0), 32.0);  // Increased power for sharper highlight
+                    vec3 sheenHighlight = mix(highlightColor, sheenColor, fresnel);
+                    vec3 highlight = sheenHighlight * specPower * (fresnel + 0.7) * attenuation * shadow * sheenIntensity;
+                    
+                    // Calculate diffuse lighting
+                    float diffuse = max(dot(vWorldNormal, vSunDir), 0.0) * 0.3 * attenuation * shadow;
+                    
+                    // Calculate rim lighting
+                    float rim = pow(1.0 - max(dot(vWorldNormal, vViewDir), 0.0), 2.5);
+                    vec3 rimLight = mix(baseColor, sheenHighlight, 0.15) * rim * max(dot(vWorldNormal, vSunDir), 0.0);
+                    
+                    // Combine all lighting components
+                    vec3 finalColor = baseColor * (0.01 + diffuse);  // Ambient + diffuse
+                    finalColor += highlight * specular;  // Specular highlight
+                    finalColor += rimLight * shadow;  // Rim lighting
+                    finalColor += sheenHighlight * fresnel * 0.1;  // Additional sheen
+                    
+                    return finalColor * lightColor;
                 }
                 
                 void main() {
-                    // Determine if we're at ground level (y = 5.0)
-                    bool isGroundLevel = abs(vPosition.y - 5.0) < 0.1;
-                    
                     vec3 finalColor = faceColor;
-                    float pulse = 1.0 + 0.2 * sin(time * 2.0);
+                    float shadow = getShadow(vPosition, vWorldNormal);
                     
-                    if (isGroundLevel) {
-                        // For ground level, use grid pattern
+                    finalColor = getMetallicSheen(faceColor, 0.8);
+                    
+                    // Calculate height-based blending factor
+                    float heightFactor = 1.0 - smoothstep(31.0, 80.0, vHeight);
+                    heightFactor = pow(heightFactor, 1.5);
+                    
+                    // Add height-based intensity boost for green color
+                    float heightIntensity = smoothstep(31.0, 100.0, vHeight);
+                    heightIntensity = pow(heightIntensity, 0.5);
+                    
+                    // Blend colors based on height
+                    vec3 heightEdgeColor = mix(edgeColorGround, edgeColorHeight, heightIntensity);
+                    
+                    // Calculate pattern blend factor
+                    float patternBlend = smoothstep(60.0, 90.0, vHeight);
+                    
+                    // Handle ground level patterns with gradient transition
+                    if (vHeight < 90.0) {
                         float gridEdge = getGridEdge(vPosition);
                         if (gridEdge > 0.0) {
-                            // Enhanced glow for ground level
-                            float groundPulse = 1.0 + 0.3 * sin(time * 2.0); // Stronger pulse
-                            vec3 groundGlow = edgeColorGround * groundGlowIntensity * groundPulse;
-                            float glowMix = min(gridEdge * 0.95, 0.95);
+                            vec3 groundGlow = edgeColorGround * groundGlowIntensity;
+                            float glowMix = min(gridEdge * 0.98, 0.98) * (1.0 - patternBlend);
                             finalColor = mix(finalColor, groundGlow, glowMix);
                             
-                            // Add extra bloom for ground edges
-                            float bloomIntensity = gridEdge * 0.6 * groundGlowIntensity * groundPulse;
+                            float bloomIntensity = gridEdge * 0.9 * groundGlowIntensity * (1.0 - patternBlend);
                             finalColor += edgeColorGround * bloomIntensity;
-                        }
-                    } else {
-                        // For elevated terrain, use triangle edges
-                        float minDist = min(min(vBarycentric.x, vBarycentric.y), vBarycentric.z);
-                        
-                        // Core white line (very thin)
-                        float core = 1.0 - smoothstep(0.0, 0.005, minDist);
-                        
-                        // Main edge
-                        float edge = 1.0 - smoothstep(0.005, 0.035, minDist);
-                        
-                        // Outer glow
-                        float glow = 1.0 - smoothstep(0.035, 0.12, minDist);
-                        glow = pow(glow, 1.6);
-                        
-                        // Enhanced lighting for faces
-                        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-                        float diffuse = max(dot(vNormal, lightDir), 0.2);
-                        
-                        // Metallic reflection
-                        vec3 viewDir = normalize(cameraPosition - vPosition);
-                        vec3 reflectDir = reflect(-lightDir, vNormal);
-                        float specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-                        
-                        // Face color with metallic sheen
-                        finalColor = faceColor * (diffuse * 0.7 + 0.3) + vec3(0.3) * specular;
-                        
-                        // Add edge and glow
-                        if (edge > 0.0) {
-                            float coreIntensity = min(core * 0.3, 0.3);
-                            vec3 edgeGlow = mix(edgeColorHeight, coreColorHeight, coreIntensity) * glowIntensity * pulse;
-                            float edgeMix = min(edge * 0.9, 0.9);
-                            finalColor = mix(finalColor, edgeGlow, edgeMix);
-                        }
-                        
-                        if (glow > 0.0) {
-                            float glowIntensityFalloff = glow * 0.4 * glowIntensity * pulse;
-                            glowIntensityFalloff = min(glowIntensityFalloff, 0.5);
-                            finalColor += edgeColorHeight * glowIntensityFalloff;
+                            
+                            finalColor += edgeColorGround * gridEdge * 0.6 * (1.0 - patternBlend);
                         }
                     }
                     
-                    // Enhanced brightness limit for ground level glow
-                    finalColor = min(finalColor, vec3(1.6));
+                    // Handle higher terrain patterns with gradient transition
+                    float minDist = min(min(vBarycentric.x, vBarycentric.y), vBarycentric.z);
+                    float core = 1.0 - smoothstep(0.0, 0.005, minDist);
+                    float edge = 1.0 - smoothstep(0.005, 0.035, minDist);
+                    float glow = 1.0 - smoothstep(0.035, 0.12, minDist);
+                    glow = pow(glow, 1.6);
+                    
+                    if (edge > 0.0) {
+                        float coreIntensity = min(core * 0.3, 0.3);
+                        vec3 edgeGlow = mix(heightEdgeColor, coreColorHeight, coreIntensity) * glowIntensity * (1.0 + heightIntensity * 2.0);
+                        float edgeMix = min(edge * 0.9, 0.9) * patternBlend;
+                        finalColor = mix(finalColor, edgeGlow, edgeMix);
+                        
+                        finalColor += heightEdgeColor * edge * 0.5 * patternBlend;
+                    }
+                    
+                    if (glow > 0.0) {
+                        float glowIntensityFalloff = glow * 0.5 * glowIntensity * (1.0 + heightIntensity * 2.0) * patternBlend;
+                        glowIntensityFalloff = min(glowIntensityFalloff, 1.0);
+                        finalColor += heightEdgeColor * glowIntensityFalloff;
+                    }
+                    
+                    // Ensure darker unlit faces with proper light direction
+                    finalColor = max(finalColor, vec3(0.001));
+                    finalColor = pow(finalColor, vec3(0.85));
+                    float exposure = 1.4;
+                    finalColor = vec3(1.0) - exp(-finalColor * exposure);
+                    finalColor = min(finalColor, vec3(0.9));
                     
                     gl_FragColor = vec4(finalColor, 1.0);
                 }
             `,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            transparent: false,
+            depthWrite: true,
+            depthTest: true
         });
 
         this.material = material;
+        this.material.needsUpdate = true;  // Ensure initial update
     }
 
     private generateTerrain(): void {
@@ -254,10 +366,25 @@ export class TerrainGenerator {
 
         // Helper function to get height using Perlin noise
         const getHeight = (x: number, z: number): number => {
-            const maxHeight = cellSize * 3.2;  // Doubled from 1.6 to 3.2
-            const baseHeight = 5.0;  // Keep the same base height
+            const maxHeight = cellSize * 3.2;
+            const baseHeight = 5.0;
             
-            // Sample noise at different frequencies
+            // Add micro-detail noise for ground level variation
+            const getMicroDetail = (x: number, z: number): number => {
+                const microScale1 = 0.8;
+                const microScale2 = 1.2;
+                
+                let microNoise = 
+                    noise(x * microScale1, z * microScale1) * 0.6 +
+                    noise(x * microScale2, z * microScale2) * 0.4;
+                
+                microNoise = (microNoise + 1) * 0.5;
+                
+                // Increased height variation to 0-15 units
+                return microNoise * 15.0;
+            };
+            
+            // Sample noise at different frequencies for terrain features
             const noise = (sx: number, sz: number): number => {
                 const X = Math.floor(sx) & 255;
                 const Z = Math.floor(sz) & 255;
@@ -286,30 +413,26 @@ export class TerrainGenerator {
                 );
             };
 
-            // Sample at different frequencies for more interesting terrain
-            const scale1 = 0.08;  // Large features
-            const scale2 = 0.2;   // Medium features
-            const scale3 = 0.6;   // Small features
+            // Generate base terrain
+            const scale1 = 0.08;
+            const scale2 = 0.2;
+            const scale3 = 0.6;
 
-            // Generate base terrain with more emphasis on lower values
             let baseNoise = 
                 noise(x * scale1, z * scale1) * 0.65 +
                 noise(x * scale2, z * scale2) * 0.25 +
                 noise(x * scale3, z * scale3) * 0.1;
 
-            // Normalize to [0, 1] range
             baseNoise = (baseNoise + 1) * 0.5;
 
-            // Apply threshold for flat areas - if below 0.4, make it flat
             const threshold = 0.4;
             if (baseNoise < threshold) {
-                return baseHeight;
+                // For flat areas, add subtle height variation (0-5 units)
+                return baseHeight + getMicroDetail(x, z);
             }
 
-            // Remap the remaining range [threshold, 1] to [0, 1] for height variation
+            // For higher terrain, proceed as before
             const remappedNoise = (baseNoise - threshold) / (1 - threshold);
-
-            // Add some quantization for more angular features
             const quantizeLevel = cellSize * 0.25;
             const heightAboveBase = Math.round(remappedNoise * maxHeight / quantizeLevel) * quantizeLevel;
             
@@ -330,17 +453,16 @@ export class TerrainGenerator {
 
         for (let x = -terrainSize; x < terrainSize; x += terrainGridSize) {
             for (let z = -terrainSize; z < terrainSize; z += terrainGridSize) {
-                // Create first triangle
+                // Create triangles with correct winding order (counter-clockwise)
                 const v1 = addVertex(x, z, [1, 0, 0]);
                 const v2 = addVertex(x + terrainGridSize, z, [0, 1, 0]);
                 const v3 = addVertex(x, z + terrainGridSize, [0, 0, 1]);
-                indices.push(v1, v2, v3);
+                indices.push(v1, v2, v3);  // Counter-clockwise winding
 
-                // Create second triangle
-                const v4 = addVertex(x + terrainGridSize, z, [1, 0, 0]);
-                const v5 = addVertex(x + terrainGridSize, z + terrainGridSize, [0, 1, 0]);
-                const v6 = addVertex(x, z + terrainGridSize, [0, 0, 1]);
-                indices.push(v4, v5, v6);
+                const v4 = addVertex(x + terrainGridSize, z + terrainGridSize, [1, 0, 0]);
+                const v5 = addVertex(x, z + terrainGridSize, [0, 1, 0]);
+                const v6 = addVertex(x + terrainGridSize, z, [0, 0, 1]);
+                indices.push(v4, v5, v6);  // Counter-clockwise winding
             }
         }
 
@@ -349,127 +471,22 @@ export class TerrainGenerator {
         terrainGeometry.setIndex(indices);
         terrainGeometry.computeVertexNormals();
 
-        // Create terrain mesh using the material
+        // Force correct normal orientation
+        const normals = terrainGeometry.attributes.normal.array;
+        for (let i = 0; i < normals.length; i += 3) {
+            if (normals[i + 1] < 0) {  // If normal is pointing down
+                normals[i + 1] *= -1;   // Flip it up
+            }
+        }
+        terrainGeometry.attributes.normal.needsUpdate = true;
+
+        // Ensure material exists before creating mesh
         if (!this.material) {
-            this.material = new THREE.ShaderMaterial({
-                uniforms: {
-                    faceColor: { value: new THREE.Color(0x1a1a2e) },
-                    edgeColorGround: { value: new THREE.Color(0xff8800) }, // Brighter orange for ground level
-                    edgeColorHeight: { value: new THREE.Color(0x00ff66) }, // Green for height
-                    coreColorGround: { value: new THREE.Color(0xffffff) }, // White core for ground
-                    coreColorHeight: { value: new THREE.Color(0xffffff) }, // White core for height
-                    glowIntensity: { value: 1.5 },
-                    groundGlowIntensity: { value: 2.5 }, // Separate intensity for ground
-                    cellSize: { value: cellSize }, // Add cell size for grid calculation
-                    time: { value: 0.0 }
-                },
-                vertexShader: `
-                    attribute vec3 barycentric;
-                    varying vec3 vPosition;
-                    varying vec3 vNormal;
-                    varying vec3 vBarycentric;
-                    
-                    void main() {
-                        vPosition = position;
-                        vNormal = normalize(normalMatrix * normal);
-                        vBarycentric = barycentric;
-                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                `,
-                fragmentShader: `
-                    uniform vec3 faceColor;
-                    uniform vec3 edgeColorGround;
-                    uniform vec3 edgeColorHeight;
-                    uniform vec3 coreColorGround;
-                    uniform vec3 coreColorHeight;
-                    uniform float glowIntensity;
-                    uniform float groundGlowIntensity;
-                    uniform float cellSize;
-                    uniform float time;
-                    
-                    varying vec3 vPosition;
-                    varying vec3 vNormal;
-                    varying vec3 vBarycentric;
-                    
-                    float getGridEdge(vec3 pos) {
-                        // Calculate distance to nearest grid line
-                        vec2 grid = abs(mod(pos.xz, cellSize) - cellSize * 0.5) / cellSize;
-                        float distToGrid = min(grid.x, grid.y);
-                        
-                        // Create sharp grid lines with glow
-                        return 1.0 - smoothstep(0.0, 0.05, distToGrid);
-                    }
-                    
-                    void main() {
-                        // Determine if we're at ground level (y = 5.0)
-                        bool isGroundLevel = abs(vPosition.y - 5.0) < 0.1;
-                        
-                        vec3 finalColor = faceColor;
-                        float pulse = 1.0 + 0.2 * sin(time * 2.0);
-                        
-                        if (isGroundLevel) {
-                            // For ground level, use grid pattern
-                            float gridEdge = getGridEdge(vPosition);
-                            if (gridEdge > 0.0) {
-                                // Enhanced glow for ground level
-                                float groundPulse = 1.0 + 0.3 * sin(time * 2.0); // Stronger pulse
-                                vec3 groundGlow = edgeColorGround * groundGlowIntensity * groundPulse;
-                                float glowMix = min(gridEdge * 0.95, 0.95);
-                                finalColor = mix(finalColor, groundGlow, glowMix);
-                                
-                                // Add extra bloom for ground edges
-                                float bloomIntensity = gridEdge * 0.6 * groundGlowIntensity * groundPulse;
-                                finalColor += edgeColorGround * bloomIntensity;
-                            }
-                        } else {
-                            // For elevated terrain, use triangle edges
-                            float minDist = min(min(vBarycentric.x, vBarycentric.y), vBarycentric.z);
-                            
-                            // Core white line (very thin)
-                            float core = 1.0 - smoothstep(0.0, 0.005, minDist);
-                            
-                            // Main edge
-                            float edge = 1.0 - smoothstep(0.005, 0.035, minDist);
-                            
-                            // Outer glow
-                            float glow = 1.0 - smoothstep(0.035, 0.12, minDist);
-                            glow = pow(glow, 1.6);
-                            
-                            // Enhanced lighting for faces
-                            vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-                            float diffuse = max(dot(vNormal, lightDir), 0.2);
-                            
-                            // Metallic reflection
-                            vec3 viewDir = normalize(cameraPosition - vPosition);
-                            vec3 reflectDir = reflect(-lightDir, vNormal);
-                            float specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-                            
-                            // Face color with metallic sheen
-                            finalColor = faceColor * (diffuse * 0.7 + 0.3) + vec3(0.3) * specular;
-                            
-                            // Add edge and glow
-                            if (edge > 0.0) {
-                                float coreIntensity = min(core * 0.3, 0.3);
-                                vec3 edgeGlow = mix(edgeColorHeight, coreColorHeight, coreIntensity) * glowIntensity * pulse;
-                                float edgeMix = min(edge * 0.9, 0.9);
-                                finalColor = mix(finalColor, edgeGlow, edgeMix);
-                            }
-                            
-                            if (glow > 0.0) {
-                                float glowIntensityFalloff = glow * 0.4 * glowIntensity * pulse;
-                                glowIntensityFalloff = min(glowIntensityFalloff, 0.5);
-                                finalColor += edgeColorHeight * glowIntensityFalloff;
-                            }
-                        }
-                        
-                        // Enhanced brightness limit for ground level glow
-                        finalColor = min(finalColor, vec3(1.6));
-                        
-                        gl_FragColor = vec4(finalColor, 1.0);
-                    }
-                `,
-                side: THREE.DoubleSide
-            });
+            this.createTerrainMaterial();
+        }
+
+        if (!this.material) {
+            throw new Error('Failed to create terrain material');
         }
 
         // Create terrain mesh using the material
@@ -488,7 +505,6 @@ export class TerrainGenerator {
 
     public setSeed(newSeed: number): void {
         this.seed = newSeed;
-        // Reinitialize the noise texture with new seed
         if (this.noiseTexture) {
             this.noiseTexture.dispose();
             this.noiseTexture = null;
@@ -507,25 +523,16 @@ export class TerrainGenerator {
     }
 
     public dispose(): void {
-        // Remove and dispose of all meshes
-        const meshesToRemove = this.scene.children.filter(child => 
-            child instanceof THREE.Mesh || 
-            child instanceof THREE.LineSegments
-        );
-        
-        for (const mesh of meshesToRemove) {
-            this.scene.remove(mesh);
-            if (mesh.geometry) {
-                mesh.geometry.dispose();
+        if (this.terrainMesh) {
+            this.scene.remove(this.terrainMesh);
+            if (this.terrainMesh.geometry) {
+                this.terrainMesh.geometry.dispose();
             }
-            if (mesh.material instanceof THREE.Material) {
-                mesh.material.dispose();
-            } else if (Array.isArray(mesh.material)) {
-                mesh.material.forEach(mat => mat.dispose());
+            if (this.terrainMesh.material) {
+                this.terrainMesh.material.dispose();
             }
+            this.terrainMesh = null;
         }
-
-        this.terrainMesh = null;
     }
 
     public getSeed(): number {
