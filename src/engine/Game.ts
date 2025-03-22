@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GridSystem } from './terrain/GridSystem';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
+import { SunControl } from './ui/SunControl';
 
 export class Game {
     private scene: THREE.Scene;
@@ -12,13 +13,17 @@ export class Game {
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
     private lightingSystem: LightingSystem | null = null;
+    private sunControl: SunControl | null = null;
     private clock: THREE.Clock;
     private lastTime: number = 0;
 
     constructor() {
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+        this.renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            logarithmicDepthBuffer: true // Help with z-fighting
+        });
         this.clock = new THREE.Clock();
         
         this.initialize();
@@ -30,21 +35,45 @@ export class Game {
         // Setup renderer
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.0;
         document.body.appendChild(this.renderer.domElement);
 
-        // Setup camera
-        this.camera.position.set(100, 100, 100);
-        this.camera.lookAt(0, 0, 0);
+        // Store renderer in scene's userData for access by other systems
+        this.scene.userData.renderer = this.renderer;
 
-        // Setup controls
+        // Setup camera with adjusted parameters for better sun visibility
+        this.camera.position.set(200, 200, 200);
+        this.camera.lookAt(0, 0, 0);
+        this.camera.far = 500000;
+        this.camera.updateProjectionMatrix();
+
+        // Store camera in scene's userData
+        this.scene.userData.camera = this.camera;
+
+        // Setup controls with more relaxed limits
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
+        this.controls.maxDistance = 2000;
+        this.controls.minDistance = 50;
+        this.controls.maxPolarAngle = Math.PI * 0.65;
+        this.controls.minPolarAngle = 0.1;
 
-        // Initialize systems
+        // Initialize lighting first using singleton pattern
+        this.lightingSystem = LightingSystem.getInstance(this.scene, this.camera);
+        
+        // Then initialize grid and terrain
         this.gridSystem = new GridSystem(this.scene);
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem);
-        this.lightingSystem = new LightingSystem(this.scene, this.camera);
+        
+        // Finally initialize UI controls
+        this.sunControl = new SunControl(this.lightingSystem);
+
+        // Set initial sun height
+        if (this.lightingSystem) {
+            this.lightingSystem.setManualSunHeight(0.5);
+        }
     }
 
     private setupEventListeners(): void {
@@ -83,6 +112,9 @@ export class Game {
     public dispose(): void {
         if (this.terrainGenerator) {
             this.terrainGenerator.dispose();
+        }
+        if (this.sunControl) {
+            this.sunControl.dispose();
         }
         if (this.lightingSystem) {
             this.lightingSystem.dispose();

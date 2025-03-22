@@ -20,16 +20,16 @@ export class TerrainGenerator {
         this.chunkSize = gridSystem.getCellSize();
         this.sunLightPosition = new THREE.Vector3(100, 100, -100);
         
-        // Find camera in scene and enable layers
-        const camera = this.scene.children.find(child => child instanceof THREE.Camera) as THREE.Camera;
+        // Get camera from scene's userData
+        const camera = this.scene.userData.camera as THREE.Camera;
         if (camera) {
             camera.layers.enable(0);  // Terrain layer
-            console.log('Camera layers enabled:', {
+            console.log('Using camera from scene userData:', {
                 layers: camera.layers,
                 camera: camera
             });
         } else {
-            console.warn('No camera found in scene');
+            console.warn('No camera found in scene userData');
         }
         
         this.initialize();
@@ -347,7 +347,13 @@ export class TerrainGenerator {
             side: THREE.DoubleSide,
             transparent: false,
             depthWrite: true,
-            depthTest: true
+            depthTest: true,
+            stencilWrite: true,
+            stencilRef: 1,
+            stencilFunc: THREE.AlwaysStencilFunc,
+            stencilZPass: THREE.ReplaceStencilOp,
+            stencilZFail: THREE.KeepStencilOp,
+            stencilFail: THREE.KeepStencilOp
         });
 
         this.material = material;
