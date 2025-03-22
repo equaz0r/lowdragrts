@@ -77,27 +77,72 @@ export class LightingSystem {
 
         // Create the sun sphere with improved depth testing
         const sunGeometry = new THREE.SphereGeometry(2400, 32, 32);
-        const sunMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffdd66,
-            transparent: false,
-            side: THREE.FrontSide,
+        const sunMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                color: { value: new THREE.Color(0xffdd66) }
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vViewPosition = mvPosition.xyz;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 color;
+                varying vec3 vNormal;
+                varying vec3 vViewPosition;
+                
+                void main() {
+                    // Calculate view-space normal
+                    vec3 viewNormal = normalize(vNormal);
+                    
+                    // Calculate distance from center in view space
+                    vec3 viewDir = normalize(vViewPosition);
+                    float viewDot = dot(viewNormal, -viewDir);
+                    float dist = length(cross(viewDir, viewNormal));
+                    
+                    // Create sharp disc with slight edge softness
+                    float disc = 1.0 - smoothstep(0.92, 0.96, dist);
+                    
+                    // Add subtle radial gradient for depth
+                    float radial = 1.0 - smoothstep(0.0, 0.7, dist);
+                    float brightness = mix(1.0, 1.1, radial);
+                    
+                    // Final color with increased base brightness
+                    vec3 finalColor = color * brightness * 1.4;
+                    float alpha = disc;
+                    
+                    gl_FragColor = vec4(finalColor, alpha);
+                }
+            `,
+            transparent: true,
             depthTest: true,
-            depthWrite: true
+            depthWrite: false,
+            side: THREE.FrontSide,
+            blending: THREE.AdditiveBlending
         });
+
         this.lightSphere = new THREE.Mesh(sunGeometry, sunMaterial);
-        this.lightSphere.renderOrder = 2; // Higher render order to ensure it renders after terrain
-        this.lightSphere.layers.set(1); // Put sun in a different layer
+        this.lightSphere.renderOrder = 2;
+        this.lightSphere.layers.set(1);
         this.scene.add(this.lightSphere);
 
         // Create sun halo with improved depth handling
-        const haloGeometry = new THREE.PlaneGeometry(9600, 9600);
+        const haloGeometry = new THREE.PlaneGeometry(28800, 28800);  // Increased from 9600 to 28800 (3x)
         const haloMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: new THREE.Color(0xffdd66) },
-                sunHeight: { value: 0.5 }
+                sunHeight: { value: 0.5 },
+                sunColor: { value: new THREE.Color(0xffdd66) }  // Added to sync with sun color
             },
             vertexShader: `
                 varying vec2 vUv;
+                
                 void main() {
                     vUv = uv;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -105,19 +150,32 @@ export class LightingSystem {
             `,
             fragmentShader: `
                 uniform vec3 color;
+                uniform vec3 sunColor;
                 uniform float sunHeight;
                 varying vec2 vUv;
+                
                 void main() {
                     vec2 center = vec2(0.5, 0.5);
                     float dist = length(vUv - center);
+                    
+                    // Adjusted alpha calculation for larger, more visible halo
                     float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-                    alpha = pow(alpha, 2.0) * 0.4;
+                    alpha = pow(alpha, 1.5) * 0.6;  // Increased from 0.4 to 0.6, reduced power for softer fade
                     
-                    // Reduce halo intensity when sun is below horizon
-                    float intensity = smoothstep(0.3, 0.65, sunHeight);
-                    alpha *= intensity;
+                    // Calculate sun height factor with less aggressive fade
+                    float heightFactor = smoothstep(0.25, 0.7, sunHeight);
                     
-                    gl_FragColor = vec4(color, alpha);
+                    // Maintain color intensity at lower heights
+                    vec3 finalColor = sunColor;
+                    
+                    // Add extra glow for lower sun positions
+                    float lowSunGlow = (1.0 - heightFactor) * 0.5;
+                    finalColor *= (1.0 + lowSunGlow);
+                    
+                    // Adjust alpha but maintain more visibility at lower heights
+                    alpha *= mix(0.8, 1.0, heightFactor);
+                    
+                    gl_FragColor = vec4(finalColor, alpha);
                 }
             `,
             transparent: true,
@@ -130,11 +188,11 @@ export class LightingSystem {
         this.haloGroup = new THREE.Group();
         this.frontHalo = new THREE.Mesh(haloGeometry, haloMaterial);
         this.backHalo = new THREE.Mesh(haloGeometry, haloMaterial.clone());
-        this.frontHalo.position.z = 100;
-        this.backHalo.position.z = -100;
-        this.frontHalo.renderOrder = 2;
-        this.backHalo.renderOrder = 2;
-        this.haloGroup.renderOrder = 2;
+        this.frontHalo.position.z = 300;  // Increased from 100 to 300 for better separation
+        this.backHalo.position.z = -300;  // Increased from -100 to -300 for better separation
+        this.frontHalo.renderOrder = -1;
+        this.backHalo.renderOrder = -1;
+        this.haloGroup.renderOrder = -1;
         this.frontHalo.layers.set(1);
         this.backHalo.layers.set(1);
         this.haloGroup.layers.set(1);
@@ -209,11 +267,20 @@ export class LightingSystem {
             this.skyMesh.material.uniforms.brightness.value = 0.3 + Math.max(0, normalizedSunHeight) * 0.7;
         }
 
+        // Update sun color and intensity based on normalized height
+        const sunColor = new THREE.Color();
+        const lowColor = new THREE.Color(0xff4400);  // Orange-red for low sun
+        const highColor = new THREE.Color(0xffdd66);  // Yellow-white for high sun
+        sunColor.lerpColors(lowColor, highColor, normalizedSunHeight);
+        
+        // Update halo colors
         if (this.frontHalo.material instanceof THREE.ShaderMaterial) {
             this.frontHalo.material.uniforms.sunHeight.value = normalizedSunHeight;
+            this.frontHalo.material.uniforms.sunColor.value.copy(sunColor);
         }
         if (this.backHalo.material instanceof THREE.ShaderMaterial) {
             this.backHalo.material.uniforms.sunHeight.value = normalizedSunHeight;
+            this.backHalo.material.uniforms.sunColor.value.copy(sunColor);
         }
 
         // Make sun and halo face the camera
@@ -224,14 +291,9 @@ export class LightingSystem {
         this.sunLight.position.copy(this.lightSphere.position);
         this.sunLight.lookAt(0, 0, 0);
 
-        // Update sun color and intensity based on normalized height
-        const sunColor = new THREE.Color();
-        const lowColor = new THREE.Color(0xff4400);  // Orange-red for low sun
-        const highColor = new THREE.Color(0xffdd66);  // Yellow-white for high sun
-        sunColor.lerpColors(lowColor, highColor, normalizedSunHeight);
-        
-        if (this.lightSphere.material instanceof THREE.MeshBasicMaterial) {
-            this.lightSphere.material.color = sunColor;
+        // Update sun material
+        if (this.lightSphere.material instanceof THREE.ShaderMaterial) {
+            this.lightSphere.material.uniforms.color.value.copy(sunColor);
         }
 
         // Adjust light intensities based on normalized height
