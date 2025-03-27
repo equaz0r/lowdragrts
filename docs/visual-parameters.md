@@ -126,6 +126,62 @@ Location: `src/engine/shaders/terrain.frag`
 | `shadowSoftness` | Softness of shadow edges | `0.3` |
 | `shadowIntensity` | Overall intensity of shadows | `0.95` |
 
+## Sun and Lighting
+- Sun Direction: Vector3(-1, 0.3, 0).normalize() (default)
+- Sun Color: Color(1.0, 0.98, 0.9) (warm white)
+- Sun Intensity: 1.0 (base value)
+- Sun Height: 0.3 (y-component of normalized direction)
+
+## Reflections
+### Material Properties
+- Metalness: 0.8 (base value)
+- Roughness: 0.2 (base value)
+- Environment Map Intensity: 1.0
+
+### Shader Parameters
+- Reflection Parameters: Vector4(0.9, 0.1, 2.0, 0.8)
+  - x: Metalness blend factor (0.9)
+  - y: Roughness blend factor (0.1)
+  - z: Position falloff length (2.0)
+  - w: Total reflection power (0.8)
+
+### Reflection Factors
+- View Factor Weight: 3.0
+- Sun Factor Weight: 2.5
+- Position Factor Weight: 1.0
+- Panel Factor Weight: 0.3
+- Grazing Effect Weight: 2.0
+
+### Reflection Powers
+- Sun Factor Power: 0.3
+- View Factor Power: 0.7
+- Height Factor Power: 0.1
+- Grazing Factor Power: 0.5
+
+### Reflection Thresholds
+- Minimum Reflection Threshold: 0.4
+- Reflection Blend Strength: 2.0
+
+## Grid System
+- Grid Size: 4000 units
+- Grid Divisions: 100 (doubled for higher resolution)
+- Segment Size: 40 units
+- Panel Border Width: 0.95 (thin borders)
+- Panel Variation: 0.1 (subtle variation)
+
+## Terrain Generation
+- Height Scale: 800 units
+- Noise Scale: 0.001
+- Noise Octaves: 8
+- Persistence: 0.65
+- Lacunarity: 1.6
+
+## Colors
+- Base Color: Color(0x000033) (dark blue)
+- Peak Color: Color(0x3366ff) (bright blue)
+- Low Edge Color: Color(0xff6600) (orange)
+- High Edge Color: Color(0x00ff00) (green)
+
 ## Notes on Adjusting Parameters
 - Color values are in hexadecimal format
 - Distance units are consistent across the engine
