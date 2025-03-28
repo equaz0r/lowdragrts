@@ -1,4 +1,5 @@
 import { LightingSystem } from '../terrain/LightingSystem';
+import { LightingParameters } from '../config/GameParameters';
 
 export class SunControl {
     private container!: HTMLDivElement;
@@ -47,8 +48,8 @@ export class SunControl {
         // Create slider with modern vertical styling
         this.slider = document.createElement('input');
         this.slider.type = 'range';
-        this.slider.min = '0';
-        this.slider.max = '1';
+        this.slider.min = LightingParameters.SUN_MIN_HEIGHT.toString();
+        this.slider.max = LightingParameters.SUN_MAX_HEIGHT.toString();
         this.slider.step = '0.01';
         this.slider.value = '0.5';
         
@@ -78,7 +79,7 @@ export class SunControl {
         // Add input event listener for continuous updates
         this.slider.addEventListener('input', () => {
             const value = parseFloat(this.slider.value);
-            this.lightingSystem.setManualSunHeight(value);
+            this.lightingSystem.setSunHeight(value);
         });
 
         // Add slider to wrapper and wrapper to document

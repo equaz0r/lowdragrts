@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { GridParameters } from '../config/GameParameters';
 
 export class GridSystem {
     private scene: THREE.Scene;
-    private readonly gridSize: number = 64; // -32 to 32
-    private readonly cellSize: number = 100;
+    private readonly gridSize: number;
+    private readonly cellSize: number;
     private readonly totalSize: number;
     private readonly divisions: number;
     private camera: THREE.PerspectiveCamera;
@@ -11,8 +12,10 @@ export class GridSystem {
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
         this.scene = scene;
         this.camera = camera;
-        this.totalSize = this.gridSize * this.cellSize;
-        this.divisions = this.gridSize;
+        this.cellSize = GridParameters.CELL_SIZE;
+        this.divisions = GridParameters.DIVISIONS;
+        this.gridSize = this.divisions;
+        this.totalSize = GridParameters.TOTAL_SIZE;
     }
 
     public getGridSize(): number {

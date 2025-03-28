@@ -60,7 +60,7 @@ export class Game {
 
         // Set initial sun height
         if (this.lightingSystem) {
-            this.lightingSystem.setManualSunHeight(0.5);
+            this.lightingSystem.setSunHeight(0.5);
         }
 
         this.setupEventListeners();
@@ -89,7 +89,7 @@ export class Game {
 
         // Update lighting
         if (this.lightingSystem) {
-            this.lightingSystem.update(deltaTime);
+            this.lightingSystem.update();
         }
 
         // Update controls

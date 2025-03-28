@@ -52,31 +52,76 @@ Location: `src/engine/terrain/LightingSystem.ts`
 ## Terrain Generation
 Location: `src/engine/terrain/TerrainGenerator.ts`
 
-### Terrain Geometry
+### Base Parameters
 | Parameter | Description | Current Value |
 |-----------|-------------|---------------|
-| `size` | Terrain plane size | `4000` units |
-| `segments` | Grid resolution | `200` |
-| `scale1` | Broad feature scale | `0.0015` |
-| `scale2` | Medium feature scale | `0.005` |
-| `scale3` | Detail feature scale | `0.02` |
+| `heightScale` | Overall terrain height multiplier | `800` units |
+| `noiseScale` | Base scale for noise generation | `0.001` |
+| `noiseOctaves` | Number of noise layers for detail | `8` |
+| `persistence` | How quickly amplitude decreases | `0.65` |
+| `lacunarity` | How quickly frequency increases | `1.6` |
 
-### Height Generation
+### Base Terrain Generation
 | Parameter | Description | Current Value |
 |-----------|-------------|---------------|
-| `heightMultiplier1` | Large feature height | `200` units |
-| `heightMultiplier2` | Medium feature height | `100` units |
-| `heightMultiplier3` | Small feature height | `50` units |
+| `baseNoiseFrequency` | Initial frequency for base terrain | `0.3` |
+| `baseNoiseOctaves` | Number of octaves for base terrain | `6` |
+| `baseAmplitudeFalloff` | Amplitude reduction per octave | `0.7` |
+| `baseFrequencyIncrease` | Frequency increase per octave | `1.6` |
+| `baseNoiseWeights` | Weights for noise blending | `[0.4, 0.4, 0.2]` |
 
-### Terrain Material
+### Peak Generation
 | Parameter | Description | Current Value |
 |-----------|-------------|---------------|
-| `baseColor` | Base terrain color | `0x444444` (Dark gray) |
-| `glowColor` | Edge glow color | `0x666666` (Medium gray) |
-| `heightColor` | Height-based color | `0x888888` (Light gray) |
-| `heatNoiseScale` | Heat distortion scale | `0.2` |
-| `heatNoiseSpeed` | Heat animation speed | `0.1` |
-| `heatIntensity` | Heat effect strength | `0.1` |
+| `peakNoiseFrequency` | Initial frequency for peaks | `1.2 * noiseScale` |
+| `peakNoiseWeights` | Weights for peak noise blending | `[0.2, 0.2, 0.3, 0.3]` |
+| `peakLowThreshold` | Start of peak transition | `0.25` |
+| `peakHighThreshold` | End of peak transition | `0.6` |
+
+### Angular Terrain
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `angularSteps` | Number of height steps | `20` |
+| `minAngularBlend` | Minimum angular blend factor | `0.3` |
+| `maxAngularBlend` | Maximum angular blend factor | `0.5` |
+
+### Colors
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `baseColor` | Base terrain color | `0x000033` (Dark blue) |
+| `peakColor` | Color at high elevations | `0x3366ff` (Bright blue) |
+| `lowEdgeColor` | Grid color at low heights | `0xff6600` (Orange) |
+| `highEdgeColor` | Grid color at high heights | `0x00ff00` (Green) |
+| `edgeOpacity` | Base opacity for grid lines | `0.6` |
+
+### Edge Parameters
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `lowHeightThreshold` | Height threshold for orange zone | `0.15` |
+| `transitionThreshold` | Height for color transition | `0.2` |
+| `alignedEdgeIntensity` | Intensity for grid-aligned edges | `1.0` |
+| `nonAlignedEdgeIntensity` | Intensity for non-aligned edges | `0.15` |
+| `heightIntensityMin` | Minimum height-based intensity | `0.4` |
+| `heightIntensityMax` | Maximum height-based intensity | `1.6` |
+
+### Coordinate Markers
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `markerOffset` | Height above terrain | `150` units |
+| `markerScale` | Size of coordinate sprites | `[300, 150, 1]` |
+| `cardinalColor` | Color for N/S/E/W markers | `#ff9933` |
+| `cornerColor` | Color for corner markers | `#33ff33` |
+| `markerOpacity` | Sprite opacity | `0.9` |
+| `textSize` | Font size for markers | `48px` |
+
+### Material Properties
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `metalness` | Base material metalness | `0.6` |
+| `roughness` | Base material roughness | `0.4` |
+| `envMapIntensity` | Environment map strength | `0.8` |
+| `wireframe` | Show wireframe | `false` |
+| `flatShading` | Use flat shading | `true` |
 
 ## Grid System
 Location: `src/engine/terrain/GridSystem.ts`
