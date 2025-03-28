@@ -1,140 +1,26 @@
-# Live Gameplan and Handover (v1.2 - 2024-03-19)
+# Live Gameplan and Handover (v1.3 - 2024-03-28)
 
 ## Current Status
-- Terrain system is implemented with height-based generation
+- Terrain system is implemented with height-based generation and reflections
 - Grid system is functional with panel-based visualization
-- Basic lighting system is in place
+- Advanced lighting system with dynamic sun and sky effects
 - Camera controls are implemented
-- Reflection system is being refined
-
-## Immediate Focus
-1. **Reflection System Refinement**
-   - Adjusting shader-based reflections to be more visible when looking west
-   - Balancing built-in material reflections with custom shader reflections
-   - Fine-tuning reflection parameters for natural appearance
-   - Ensuring consistent reflection behavior across different viewing angles
-
-2. **Grid System Enhancement**
-   - Review additive blending for grid visualization
-   - Consider alternative blending modes for better visibility
-   - Evaluate performance impact of current blending approach
-
-## Backlog
-1. **Terrain System**
-   - [ ] Implement LOD system for better performance
-   - [ ] Add terrain modification capabilities
-   - [ ] Optimize height generation
-   - [ ] Add terrain texturing system
-
-2. **Lighting System**
-   - [ ] Implement dynamic shadows
-   - [ ] Add ambient occlusion
-   - [ ] Create day/night cycle
-   - [ ] Add weather effects
-
-3. **Grid System**
-   - [ ] Add different grid types
-   - [ ] Implement grid snapping
-   - [ ] Add grid-based placement system
-   - [ ] Create grid interaction system
-
-4. **Camera System**
-   - [ ] Add different camera modes
-   - [ ] Implement camera constraints
-   - [ ] Add camera transitions
-   - [ ] Create camera presets
-
-5. **UI/UX**
-   - [ ] Create main menu
-   - [ ] Add settings panel
-   - [ ] Implement tooltips
-   - [ ] Create help system
-
-## Technical Notes
-- Shader compilation is asynchronous, need to handle this in updates
-- Reflection system uses both material properties and custom shaders
-- Grid system uses additive blending which may need review
-- Camera system needs better constraints and smoothing
-
-## Documentation
-- visual-parameters.md: Updated with latest reflection and lighting parameters
-- architecture.md: New document describing engine structure and systems
-- live-gameplan-and-handover.md: This document, tracking current status and plans
-
-## Next Steps
-1. Complete reflection system refinement
-2. Review and potentially update grid blending
-3. Begin implementing LOD system
-4. Start work on terrain modification system
-
-## Notes for Next Session
-- Focus on reflection visibility when looking west
-- Consider alternative blending modes for grid
-- Review shader compilation timing
-- Document any new parameters or changes
-
-# Game Development Status and Roadmap
-
-## Current Status
-
-### Active Branch and Features
-- Branch: `terrain-rebuild`
-- Current focus: Lighting system improvements and atmospheric effects
-- Latest major changes: Sun shader improvements and shape fixes
-
-### Implementation Details
-- Grid Size: 32x32
-- Cell Size: 100 units
-- Terrain Height Scale: 200 units
-- Noise Texture Size: 4096x4096
-- Day Length: 3600 seconds (1 hour)
-
-### Core Systems
-- ✅ Basic game engine structure
-- ✅ Three.js integration
-- ✅ Camera controls
-- ✅ Grid system
-- ✅ Basic lighting system
-- ✅ Basic terrain generation
-- 🔄 State machine implementation (In Progress)
-
-### Visual Systems
-- ✅ Sun movement and coloring
-- ✅ Sky gradient
-- ✅ Grid rendering
-- ✅ Basic terrain mesh
-- 🔄 Heat distortion effects (Partial)
-- ❌ Atmospheric effects
-- ❌ Enhanced terrain visuals
-
-### Game Systems
-- ❌ Unit system
-- ❌ Building system
-- ❌ Resource system
-- ❌ Combat system
-- ❌ AI system
+- State machine implementation is complete
+- Parameter management system is established
 
 ## Development Environment Setup
 
 ### Prerequisites
-1. Node.js and npm installed
-2. Cursor IDE installed
-3. Git installed and configured
+1. Node.js (v18+) and npm installed
+2. Git installed and configured
+3. Visual Studio Code or Cursor IDE installed
+4. WebGL-capable browser
 
-### Setup Commands
+### Repository Setup
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/lowdragrts.git
+git clone https://github.com/equaz0r/lowdragrts.git
 cd lowdragrts
-
-# Check available branches
-git branch -a
-
-# Switch to the terrain-rebuild branch
-git checkout terrain-rebuild
-
-# Pull the latest changes
-git pull origin terrain-rebuild
 
 # Install dependencies
 npm install
@@ -143,114 +29,220 @@ npm install
 npm run dev
 ```
 
-## Immediate Development Plan
+### Branch Structure
+- `main` - Stable release branch
+- `state-machine-implementation` - Current development branch
 
-### Phase 1: State Machine Implementation
-1. Create `GameStateMachine` class
-   - System initialization management
-   - State transitions
-   - Resource management
-   - System updates and rendering
+### Development Workflow
+1. Pull latest changes:
+   ```bash
+   git pull origin state-machine-implementation
+   ```
 
-2. Refactor existing systems
-   - Convert systems to use state machine
-   - Implement proper initialization order
-   - Add system dependencies
-   - Improve error handling
+2. Create feature branch (if needed):
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
 
-3. Add state management for
-   - Game pause/resume
-   - System enable/disable
-   - Resource loading/unloading
-   - Scene management
+3. Make changes and commit:
+   ```bash
+   git add .
+   git commit -m "type: description of changes"
+   ```
+   Commit types: feat, fix, refactor, docs, style, test, chore
 
-### Phase 2: Visual Enhancements
-1. Heat Distortion Effects
-   - Implement noise-based vertex displacement
-   - Add time-based animation
-   - Vary distortion with sun height
-   - Focus effect near horizon
-   - Optimize performance
+4. Push changes:
+   ```bash
+   git push origin your-branch-name
+   ```
 
-2. Atmospheric Effects
-   - Implement Rayleigh scattering
-   - Add wavelength-dependent colors
-   - Enhance sunset/sunrise transitions
-   - Add volumetric lighting
-   - Add dust/haze effects
-   - Implement height-based thickness
-
-3. Terrain Visual Improvements
-   - Fix terrain orientation issues
-   - Enhance height generation
-   - Improve normal calculation
-   - Implement multi-color gradient:
-     * Base: Red (0xff2200)
-     * Orange: Red-orange (0xff6600)
-     * Yellow: Orange-yellow (0xffaa00)
-     * Purple: Bright purple (0xff33ff)
-     * Cyan: Cyan (0x00ffff)
-     * Blue: Dark blue (0x0066ff)
-
-### Phase 3: Game Mechanics
-1. Unit System
-   - Unit types and properties
-   - Movement and pathfinding
-   - Unit states and behaviors
-   - Selection and commands
-
-2. Building System
-   - Building types
-   - Construction mechanics
-   - Resource requirements
-   - Building states
-
-3. Resource System
-   - Resource types:
-     * Skirulum (construction)
-     * Vlux (energy)
-     * Fredalite (rare crystal)
-     * Scrap (secondary)
-   - Collection mechanics
-   - Storage system
-   - Economy balance
+### Code Style
+- Use TypeScript strict mode
+- Follow ESLint configuration
+- Use meaningful variable and function names
+- Document complex algorithms
+- Keep functions focused and small
 
 ## Technical Debt and Known Issues
-1. Need proper error handling in system initialization
-2. Camera controls need refinement
-3. Performance optimization needed for terrain generation
-4. Shader compilation needs error handling
-5. Need proper cleanup on system disposal
-6. Fix chunks requiring regeneration to be visible
-7. Synchronize mesh updates properly
-8. Verify UV coordinate generation
 
-## Future Considerations
-1. Multiplayer support
-2. Save/Load system
-3. Mod support
-4. Advanced AI behaviors
-5. Enhanced visual effects
-   - Bloom
-   - Screen space reflections
-   - Dynamic shadows
-   - Particle systems
-6. Combat System
-   - Physics-based projectiles
-   - Line of sight requirements
-   - Terrain destruction
-   - Artillery and indirect fire
-   - Special abilities
+### High Priority
+- None currently identified
+
+### Medium Priority
+- Performance optimization needed for terrain chunk loading
+- Memory management for disposed Three.js objects needs review
+- WebGL context loss handling needs implementation
+
+### Low Priority
+- Camera controls could use refinement for edge cases
+- Grid visualization might need optimization for large terrains
+- Some shader uniforms could be consolidated
+
+## Documentation Structure
+1. **source-code-info.md**
+   - Complete codebase structure
+   - System descriptions
+   - Development guidelines
+   - File organization
+
+2. **architecture.md**
+   - System architecture details
+   - Component relationships
+   - State machine implementation
+   - System initialization flow
+
+3. **visual-parameters.md**
+   - Lighting parameters
+   - Terrain parameters
+   - Grid parameters
+   - Visual effect settings
+
+4. **live-gameplan-and-handover.md**
+   - Current status (this document)
+   - Development roadmap
+   - Implementation plans
+   - Known issues
+
+## Parameter Management
+All game parameters are now centralized in `GameParameters.ts`, organized into categories:
+- `LightingParameters` - Sun, sky, and atmospheric effects
+- `TerrainParameters` - Terrain generation and appearance
+- `GridParameters` - Grid system configuration
+- `ReflectionParameters` - Surface reflection properties
+- `CameraParameters` - Camera settings
+- `CoordinateMarkerParameters` - World coordinate display
+
+## Completed High-Priority Items
+1. **Reflection System**
+   - ✅ Shader-based reflections implemented
+   - ✅ Material reflection balance achieved
+   - ✅ Parameters fine-tuned for natural appearance
+   - ✅ Consistent behavior across viewing angles
+
+2. **Lighting System**
+   - ✅ Dynamic sun movement and scaling
+   - ✅ Smooth color transitions
+   - ✅ Sky gradient effects
+   - ✅ Halo and atmospheric effects
+
+3. **State Machine**
+   - ✅ System initialization management
+   - ✅ State transitions
+   - ✅ Resource management
+   - ✅ System updates and rendering
+
+## Current Focus
+1. **Parameter Fine-Tuning**
+   - Review and adjust sun color transitions
+   - Fine-tune reflection intensities
+   - Optimize sky gradient parameters
+   - Balance lighting intensities
+
+2. **Performance Optimization**
+   - Review shader complexity
+   - Optimize render loops
+   - Improve state transitions
+   - Monitor memory usage
+
+## Backlog
+1. **Terrain System**
+   - [ ] Implement LOD system
+   - [ ] Add terrain modification
+   - [ ] Optimize height generation
+   - [ ] Add terrain texturing
+   - [ ] Fix chunks requiring regeneration
+   - [ ] Verify UV coordinate generation
+   - [ ] Implement terrain destruction system
+
+2. **Visual Enhancements**
+   - [ ] Implement dynamic shadows
+   - [ ] Add ambient occlusion
+   - [ ] Add weather effects
+   - [ ] Implement particle systems
+   - [ ] Add bloom effects
+   - [ ] Implement screen space reflections
+   - [ ] Add volumetric lighting
+
+3. **Game Systems**
+   - [ ] Unit system
+     * Movement and pathfinding
+     * Unit states and behaviors
+     * Selection and commands
+   - [ ] Building system
+     * Construction mechanics
+     * Resource requirements
+     * Building states
+   - [ ] Resource system
+     * Primary resources:
+       - Skirulum (construction material)
+       - Vlux (energy source)
+       - Fredalite (rare crystal)
+       - Scrap (secondary resource)
+     * Collection mechanics
+     * Storage system
+     * Economy balance
+   - [ ] Combat system
+     * Physics-based projectiles
+     * Line of sight mechanics
+     * Terrain destruction integration
+     * Artillery and indirect fire
+     * Special abilities
+   - [ ] AI system
+     * Resource management
+     * Combat tactics
+     * Base building
+     * Strategic decision making
+
+4. **Performance Optimization**
+   - [ ] Implement mesh instancing for repeated elements
+   - [ ] Optimize shader complexity
+   - [ ] Add proper LOD transitions
+   - [ ] Improve chunk loading/unloading
+   - [ ] Optimize particle systems
+   - [ ] Review memory management
+   - [ ] Implement proper cleanup on system disposal
+
+5. **Future Considerations**
+   - [ ] Multiplayer support
+   - [ ] Save/Load system
+   - [ ] Mod support
+   - [ ] Advanced weather system
+   - [ ] Day/night cycle
+   - [ ] Enhanced sound system
+
+## Technical Notes
+- All visual parameters are now centralized in `GameParameters.ts`
+- State machine handles system initialization and updates
+- Shader compilation is asynchronous with proper error handling
+- Color transitions use smoothstep for natural blending
 
 ## Development Guidelines
-1. Always update visual-parameters.md when changing visual settings
-2. Maintain clean separation of concerns in systems
-3. Document all major changes
-4. Keep performance in mind
-5. Write tests for critical systems
+1. **Parameter Management**
+   - Add new parameters to `GameParameters.ts`
+   - Document all parameters with clear comments
+   - Use strongly typed constants
+   - Keep related parameters grouped
 
-## Notes
-- All visual parameters are documented in visual-parameters.md
-- System architecture documentation is in architecture.md
-- Old documentation has been archived
-- Current focus is on state machine implementation 
+2. **Code Organization**
+   - Follow system architecture defined in architecture.md
+   - Maintain separation of concerns
+   - Use dependency injection
+   - Keep systems modular
+
+3. **Documentation**
+   - Update relevant documentation when making changes
+   - Keep parameter documentation current
+   - Document complex algorithms
+   - Maintain clear system descriptions
+
+## Next Steps
+1. Fine-tune visual parameters based on testing
+2. Begin LOD system implementation
+3. Start work on dynamic shadows
+4. Plan game system implementation
+
+## Notes for Next Session
+- Review color transition parameters
+- Test sun scaling at different heights
+- Verify reflection behavior
+- Document any parameter adjustments 
