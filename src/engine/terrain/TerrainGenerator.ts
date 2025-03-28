@@ -22,7 +22,9 @@ import {
     Material,
     WebGLRenderer,
     MeshBasicMaterial,
-    FrontSide
+    FrontSide,
+    Scene,
+    Texture
 } from 'three';
 import { GridSystem } from './GridSystem';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise';
@@ -168,13 +170,17 @@ const createTerrainMaterial = (gridSize: number) => {
 
 export class TerrainGenerator {
     private readonly gridSystem: GridSystem;
-    private readonly heightScale: number = 800; // Increased from 600 for more dramatic heights
-    private readonly noiseScale: number = 0.001; // Reduced further for wider variations
+    private readonly heightScale: number = 800;
+    private readonly noiseScale: number = 0.001;
     private readonly noiseOctaves: number = 8;
-    private readonly persistence: number = 0.65; // Reduced for smoother peaks
-    private readonly lacunarity: number = 1.6;  // Reduced for more gradual changes
-    private readonly mesh: Mesh | null = null;
+    private readonly persistence: number = 0.65;
+    private readonly lacunarity: number = 1.6;
+    private mesh: Mesh | null = null;
     private camera: PerspectiveCamera;
+    private scene: Scene;
+    private material: Material | null = null;
+    private noiseTexture: Texture | null = null;
+    private terrainMesh: Mesh | null = null;
 
     // Color settings
     private readonly baseColor = new Color(0x000033);
@@ -182,9 +188,23 @@ export class TerrainGenerator {
     private readonly lowEdgeColor = new Color(0xff6600);  // Orange for low heights
     private readonly highEdgeColor = new Color(0x00ff00); // Green for high heights
 
-    constructor(gridSystem: GridSystem, camera: PerspectiveCamera) {
+    constructor(scene: Scene, gridSystem: GridSystem) {
+        this.scene = scene;
         this.gridSystem = gridSystem;
-        this.camera = camera;
+        this.camera = gridSystem.getCamera();
+        this.initialize();
+    }
+
+    private async initialize(): Promise<void> {
+        try {
+            this.terrainMesh = await this.generate();
+            this.scene.add(this.terrainMesh);
+            if (this.terrainMesh.material instanceof Material) {
+                this.material = this.terrainMesh.material;
+            }
+        } catch (error) {
+            console.error('Failed to generate terrain:', error);
+        }
     }
 
     private createCoordinateSprite(text: string, color: string = '#ff6600'): Sprite {
@@ -234,9 +254,9 @@ export class TerrainGenerator {
     public async generate(): Promise<Mesh> {
         // Create geometry
         const geometry = new BufferGeometry();
-        const gridSize = this.gridSystem.getGridSize();
+        const totalSize = this.gridSystem.getTotalSize();
         const divisions = this.gridSystem.getGridDivisions() * 2; // Double the divisions
-        const segmentSize = gridSize / divisions;
+        const segmentSize = totalSize / divisions;
 
         // Generate vertices
         const vertices: number[] = [];
@@ -320,11 +340,11 @@ export class TerrainGenerator {
         const material = new MeshStandardMaterial({
             vertexColors: true,
             wireframe: false,
-            metalness: 0.8,
-            roughness: 0.2,
+            metalness: 0.6,  // Reduced from 0.8
+            roughness: 0.4,  // Increased from 0.2
             flatShading: true,
             side: DoubleSide,
-            envMapIntensity: 1.0
+            envMapIntensity: 0.8  // Reduced from 1.0
         });
 
         const mesh = new Mesh(geometry, material);
@@ -337,10 +357,10 @@ export class TerrainGenerator {
             // Add custom uniforms
             shader.uniforms.sunDirection = { value: new Vector3(-1, 0.3, 0).normalize() };
             shader.uniforms.cameraDirection = { value: new Vector3() };
-            shader.uniforms.gridSize = { value: gridSize };
-            shader.uniforms.reflectionParams = { value: new Vector4(0.9, 0.1, 2.0, 0.8) };
+            shader.uniforms.gridSize = { value: totalSize };
+            shader.uniforms.reflectionParams = { value: new Vector4(0.7, 0.2, 2.0, 0.6) };  // Adjusted reflection parameters
             shader.uniforms.sunColor = { value: new Color(1.0, 0.98, 0.9) };
-            shader.uniforms.sunIntensity = { value: 1.0 };
+            shader.uniforms.sunIntensity = { value: 0.8 };  // Reduced from 1.0
 
             // Add varying for world-space values and grid position
             shader.vertexShader = shader.vertexShader.replace(
@@ -385,12 +405,12 @@ export class TerrainGenerator {
                     
                     // Calculate how well this surface faces the sun
                     float sunFactor = max(0.0, dot(normalizedNormal, sunDirection));
-                    sunFactor = pow(sunFactor, 0.3); // Reduced power for wider reflection spread
+                    sunFactor = pow(sunFactor, 0.4); // Increased power for more focused reflections
                     
                     // Calculate view alignment with sun reflection
-                    vec3 reflectionDir = reflect(-sunDirection, normalizedNormal); // Negate sun direction for correct reflection
+                    vec3 reflectionDir = reflect(-sunDirection, normalizedNormal);
                     float viewFactor = max(0.0, dot(normalize(cameraDirection), reflectionDir));
-                    viewFactor = pow(viewFactor, 0.7); // Adjusted power for better visibility
+                    viewFactor = pow(viewFactor, 0.8); // Increased power for sharper reflections
                     
                     // Position-based falloff (stronger in west)
                     float distanceFromWest = (vWorldPosition.x + 2000.0) / 4000.0;
@@ -401,23 +421,23 @@ export class TerrainGenerator {
                     
                     // Height-based factor (stronger on flatter areas)
                     float heightFactor = 1.0 - abs(normalizedNormal.y);
-                    heightFactor = pow(heightFactor, 0.1); // Reduced power for more consistent effect
+                    heightFactor = pow(heightFactor, 0.2); // Increased power for more contrast
                     
                     // Calculate grazing angle effect
-                    float grazingFactor = pow(1.0 - abs(dot(normalizedNormal, cameraDirection)), 0.5);
+                    float grazingFactor = pow(1.0 - abs(dot(normalizedNormal, cameraDirection)), 0.6);
                     
                     // Combine all factors with adjusted weights
                     float totalFactor = pow(
-                        viewFactor * 3.0 + // Increased view factor weight
-                        sunFactor * 2.5 +  // Increased sun factor weight
-                        positionFactor * 1.0 + // Reduced position factor weight
-                        panelFactor * 0.3 + // Slightly increased panel factor weight
-                        grazingFactor * heightFactor * 2.0, // Increased grazing effect
+                        viewFactor * 2.5 + // Reduced from 3.0
+                        sunFactor * 2.0 +  // Reduced from 2.5
+                        positionFactor * 0.8 + // Reduced from 1.0
+                        panelFactor * 0.2 + // Reduced from 0.3
+                        grazingFactor * heightFactor * 1.5, // Reduced from 2.0
                         reflectionParams.w
                     );
                     
-                    // Apply sun intensity with minimum threshold
-                    return max(0.4, totalFactor * sunIntensity); // Increased minimum threshold
+                    // Apply sun intensity with lower minimum threshold
+                    return max(0.2, totalFactor * sunIntensity); // Reduced minimum from 0.4
                 }`
             );
 
@@ -603,7 +623,7 @@ export class TerrainGenerator {
         geometry.computeVertexNormals();
 
         // Add coordinate markers
-        const halfSize = gridSize / 2;
+        const halfSize = totalSize / 2;
         const markerOffset = 150; // Increased height offset for better visibility
         
         // Cardinal directions with coordinates
@@ -728,5 +748,30 @@ export class TerrainGenerator {
         const blend = 0.3 + heightFactor * 0.2; // More angular at peaks
         
         return height * (1 - blend) + steppedHeight * blend;
+    }
+
+    public update(time: number): void {
+        // Update any time-based animations or effects
+        if (this.material && (this.material as any).customShader) {
+            const shader = (this.material as any).customShader;
+            if (shader.uniforms) {
+                shader.uniforms.time = { value: time };
+            }
+        }
+    }
+
+    public dispose(): void {
+        if (this.material instanceof Material) {
+            this.material.dispose();
+        }
+        if (this.noiseTexture) {
+            this.noiseTexture.dispose();
+        }
+        if (this.terrainMesh) {
+            this.terrainMesh.geometry.dispose();
+            if (this.terrainMesh.material instanceof Material) {
+                this.terrainMesh.material.dispose();
+            }
+        }
     }
 } 

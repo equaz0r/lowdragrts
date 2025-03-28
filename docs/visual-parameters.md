@@ -134,33 +134,55 @@ Location: `src/engine/shaders/terrain.frag`
 
 ## Reflections
 ### Material Properties
-- Metalness: 0.8 (base value)
-- Roughness: 0.2 (base value)
-- Environment Map Intensity: 1.0
+Location: `src/engine/terrain/TerrainGenerator.ts`
+
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `metalness` | Base material metalness | `0.6` |
+| `roughness` | Base material roughness | `0.4` |
+| `envMapIntensity` | Environment map reflection strength | `0.8` |
 
 ### Shader Parameters
-- Reflection Parameters: Vector4(0.9, 0.1, 2.0, 0.8)
-  - x: Metalness blend factor (0.9)
-  - y: Roughness blend factor (0.1)
-  - z: Position falloff length (2.0)
-  - w: Total reflection power (0.8)
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `reflectionParams` | Vector4 controlling reflection behavior | `(0.7, 0.2, 2.0, 0.6)` |
+| `sunIntensity` | Overall sun reflection strength | `0.8` |
 
-### Reflection Factors
-- View Factor Weight: 3.0
-- Sun Factor Weight: 2.5
-- Position Factor Weight: 1.0
-- Panel Factor Weight: 0.3
-- Grazing Effect Weight: 2.0
+### Reflection Factor Weights
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `viewFactor` | Weight of view-dependent reflection | `2.5` |
+| `sunFactor` | Weight of sun-dependent reflection | `2.0` |
+| `positionFactor` | Weight of position-based falloff | `0.8` |
+| `panelFactor` | Weight of panel-based variation | `0.2` |
+| `grazingFactor` | Weight of grazing angle effect | `1.5` |
 
 ### Reflection Powers
-- Sun Factor Power: 0.3
-- View Factor Power: 0.7
-- Height Factor Power: 0.1
-- Grazing Factor Power: 0.5
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `sunFactorPower` | Power applied to sun alignment | `0.4` |
+| `viewFactorPower` | Power applied to view alignment | `0.8` |
+| `heightFactorPower` | Power applied to height-based effect | `0.2` |
+| `grazingFactorPower` | Power applied to grazing angle | `0.6` |
 
 ### Reflection Thresholds
-- Minimum Reflection Threshold: 0.4
-- Reflection Blend Strength: 2.0
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `minReflection` | Minimum reflection threshold | `0.2` |
+| `reflectionBlend` | Reflection color blend strength | `2.0` |
+
+### Position-based Parameters
+| Parameter | Description | Current Value |
+|-----------|-------------|---------------|
+| `westFalloffStart` | Distance from west edge to start falloff | `-2000` |
+| `westFalloffLength` | Length over which western falloff occurs | `4000` |
+
+## Notes on Reflection System
+- Reflections are strongest when viewing surfaces that face the sun
+- Western-facing surfaces have enhanced reflection strength
+- Flatter surfaces show stronger reflections than steep surfaces
+- Panel borders have reduced reflection intensity
+- All reflection parameters can be adjusted in real-time through the shader uniforms
 
 ## Grid System
 - Grid Size: 4000 units
