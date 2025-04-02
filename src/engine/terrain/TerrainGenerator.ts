@@ -24,7 +24,9 @@ import {
     MeshBasicMaterial,
     FrontSide,
     Scene,
-    Texture
+    Texture,
+    BufferAttribute,
+    Object3D
 } from 'three';
 import { GridSystem } from './GridSystem';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise';
@@ -100,31 +102,26 @@ const createTerrainMaterial = (gridSize: number) => {
 
             float calculateReflection() {
                 vec3 normalizedNormal = normalize(vWorldNormal);
+                vec3 normalizedCameraDir = normalize(cameraDirection);
                 
-                // Calculate how well this surface faces the sun
-                float sunFactor = max(0.0, dot(normalizedNormal, sunDirection));
-                sunFactor = pow(sunFactor, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
+                float sunDot = max(0.0, dot(normalizedNormal, sunDirection));
+                float sunFactor = pow(sunDot, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
                 
-                // Calculate view alignment with sun reflection
                 vec3 reflectionDir = reflect(-sunDirection, normalizedNormal);
-                float viewFactor = max(0.0, dot(normalize(cameraDirection), reflectionDir));
-                viewFactor = pow(viewFactor, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
+                float viewDot = max(0.0, dot(normalizedCameraDir, reflectionDir));
+                float viewFactor = pow(viewDot, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
                 
-                // Position-based falloff (stronger in west)
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
                 float positionFactor = smoothstep(0.0, reflectionParams.z, 1.0 - distanceFromWest);
                 
-                // Panel effect
                 float panelFactor = getPanelFactor();
                 
-                // Height-based factor (stronger on flatter areas)
                 float heightFactor = 1.0 - abs(normalizedNormal.y);
                 heightFactor = pow(heightFactor, ${ReflectionParameters.HEIGHT_FACTOR_POWER.toFixed(2)});
                 
-                // Calculate grazing angle effect
-                float grazingFactor = pow(1.0 - abs(dot(normalizedNormal, cameraDirection)), ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
+                float grazingDot = 1.0 - abs(dot(normalizedNormal, normalizedCameraDir));
+                float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
                 
-                // Combine all factors with adjusted weights
                 float totalFactor = pow(
                     viewFactor * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(1)} +
                     sunFactor * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(1)} +
@@ -134,7 +131,6 @@ const createTerrainMaterial = (gridSize: number) => {
                     reflectionParams.w
                 );
                 
-                // Apply sun intensity with minimum threshold
                 return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor * sunIntensity);
             }`
         );
@@ -145,7 +141,6 @@ const createTerrainMaterial = (gridSize: number) => {
             `#include <color_fragment>
             float reflectionStrength = calculateReflection();
             
-            // Add sun color to diffuse with panel variation
             vec3 reflectionColor = sunColor * reflectionStrength;
             diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
         );
@@ -174,14 +169,39 @@ export class TerrainGenerator {
     private readonly camera: PerspectiveCamera;
     private readonly scene: Scene;
     private material: Material | null = null;
-    private noiseTexture: Texture | null = null;
     private terrainMesh: Mesh | null = null;
+    private markerGroup: Object3D | null = null;
+    private readonly noise: SimplexNoise;
+    private readonly vertexBuffer: Float32Array;
+    private readonly colorBuffer: Float32Array;
+    private readonly uvBuffer: Float32Array;
+    private readonly indexBuffer: Uint32Array;
 
     constructor(scene: Scene, gridSystem: GridSystem) {
         this.scene = scene;
         this.gridSystem = gridSystem;
         this.camera = gridSystem.getCamera();
+        this.noise = new SimplexNoise();
+        
+        // Pre-allocate buffers for terrain data
+        const divisions = this.gridSystem.getGridDivisions() * 2;
+        const vertexCount = (divisions + 1) * (divisions + 1);
+        const indexCount = divisions * divisions * 6;
+        
+        this.vertexBuffer = new Float32Array(vertexCount * 3);
+        this.colorBuffer = new Float32Array(vertexCount * 3);
+        this.uvBuffer = new Float32Array(vertexCount * 2);
+        this.indexBuffer = new Uint32Array(indexCount);
+        
         this.initialize();
+    }
+
+    /**
+     * Utility function for smooth interpolation between 0 and 1
+     */
+    private smoothstep(x: number): number {
+        x = Math.max(0, Math.min(1, x));
+        return x * x * (3 - 2 * x);
     }
 
     private async initialize(): Promise<void> {
@@ -197,44 +217,100 @@ export class TerrainGenerator {
     }
 
     private createCoordinateSprite(text: string, color: string = CoordinateMarkerParameters.CARDINAL_COLOR): Sprite {
+        // Create a new canvas with smaller dimensions
         const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Could not get canvas context');
         
-        // Increased canvas size for better text resolution
-        canvas.width = 256;
-        canvas.height = 128;
+        // Clear canvas
+        context.clearRect(0, 0, canvas.width, canvas.height);
         
-        context.fillStyle = 'transparent';
+        // Add semi-transparent background
+        context.fillStyle = `rgba(0, 0, 0, ${CoordinateMarkerParameters.BACKGROUND_OPACITY})`;
         context.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Add a semi-transparent background for better readability
-        context.fillStyle = `rgba(0, 0, 0, ${CoordinateMarkerParameters.BACKGROUND_OPACITY})`;
-        context.fillRect(10, 10, canvas.width - 20, canvas.height - 20);
-        
-        // Adjusted font settings
-        context.font = `${CoordinateMarkerParameters.FONT_WEIGHT} ${CoordinateMarkerParameters.FONT_SIZE}px ${CoordinateMarkerParameters.FONT_FAMILY}`;
+        // Set up text rendering
+        context.font = `${CoordinateMarkerParameters.FONT_WEIGHT} ${CoordinateMarkerParameters.FONT_SIZE/2}px ${CoordinateMarkerParameters.FONT_FAMILY}`;
         context.fillStyle = color;
         context.strokeStyle = '#000000';
-        context.lineWidth = 3;
+        context.lineWidth = 2;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         
-        // Draw text with outline for better visibility
-        context.strokeText(text, canvas.width/2, canvas.height/2);
-        context.fillText(text, canvas.width/2, canvas.height/2);
+        // Split text into lines
+        const lines = text.split('\n');
+        const lineHeight = CoordinateMarkerParameters.FONT_SIZE/2;
         
+        // Draw each line
+        lines.forEach((line, index) => {
+            const y = canvas.height/2 + (index - 0.5) * lineHeight;
+            context.strokeText(line, canvas.width/2, y);
+            context.fillText(line, canvas.width/2, y);
+        });
+        
+        // Create texture
         const texture = new CanvasTexture(canvas);
         texture.minFilter = NearestFilter;
         texture.magFilter = NearestFilter;
         
+        // Create sprite with proper material settings
         const spriteMaterial = new SpriteMaterial({
             map: texture,
             transparent: true,
-            opacity: CoordinateMarkerParameters.OPACITY
+            opacity: CoordinateMarkerParameters.OPACITY,
+            depthTest: true,
+            depthWrite: false,
+            sizeAttenuation: true
         });
         
         return new Sprite(spriteMaterial);
+    }
+
+    /**
+     * Common noise generation method used by both base and peak height generation
+     */
+    private generateNoise(
+        noise: SimplexNoise,
+        x: number,
+        z: number,
+        baseFrequency: number,
+        octaves: number,
+        noiseConfigs: ReadonlyArray<{
+            frequencyMultiplier: number,
+            offset?: number,
+            useAbsolute?: boolean
+        }>,
+        weights: readonly number[],
+        amplitudeFalloff: number,
+        frequencyIncrease: number
+    ): number {
+        let height = 0;
+        let amplitude = 1;
+        let frequency = baseFrequency;
+        let maxAmplitude = 0;
+
+        for (let i = 0; i < octaves; i++) {
+            // Generate noise samples with different frequencies and offsets
+            const noiseSamples = noiseConfigs.map(config => {
+                const sampleX = x * frequency * config.frequencyMultiplier + (config.offset || 0);
+                const sampleZ = z * frequency * config.frequencyMultiplier + (config.offset || 0);
+                const noiseValue = noise.noise(sampleX, sampleZ);
+                return config.useAbsolute ? Math.abs(noiseValue) : noiseValue;
+            });
+
+            // Weighted blend of noise samples
+            const noiseValue = noiseSamples.reduce((sum, sample, index) => 
+                sum + sample * weights[index], 0);
+            
+            height += noiseValue * amplitude;
+            maxAmplitude += amplitude;
+            amplitude *= amplitudeFalloff;
+            frequency *= frequencyIncrease;
+        }
+
+        return height / maxAmplitude;
     }
 
     /**
@@ -247,16 +323,8 @@ export class TerrainGenerator {
         const divisions = this.gridSystem.getGridDivisions() * 2; // Double the divisions
         const segmentSize = totalSize / divisions;
 
-        // Generate vertices
-        const vertices: number[] = [];
-        const normals: number[] = [];
-        const uvs: number[] = [];
-        const colors: number[] = [];
-        const indices: number[] = [];
-        const heightData: number[] = [];
-
         // Generate height data
-        const noise = new SimplexNoise();
+        const heightData: number[] = [];
         let minHeight = Infinity;
         let maxHeight = -Infinity;
 
@@ -267,10 +335,10 @@ export class TerrainGenerator {
                 const zPos = (z - divisions / 2) * segmentSize;
                 
                 // Generate base terrain (angular plateaus)
-                const baseHeight = this.generateBaseHeight(noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
+                const baseHeight = this.generateBaseHeight(this.noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
                 
                 // Generate mountain peaks
-                const peakHeight = this.generatePeakHeight(noise, xPos, zPos);
+                const peakHeight = this.generatePeakHeight(this.noise, xPos, zPos);
                 
                 // Combine heights with angular transition
                 const rawHeight = baseHeight * 0.3 + peakHeight * 0.7;
@@ -284,29 +352,45 @@ export class TerrainGenerator {
             }
         }
 
+        // Cache height range for normalization
+        const heightRange = maxHeight - minHeight;
+
         // Second pass: Generate vertices and colors with normalized heights
-        let idx = 0;
+        let vertexIdx = 0;
+        let colorIdx = 0;
+        let uvIdx = 0;
+        
         for (let z = 0; z <= divisions; z++) {
             for (let x = 0; x <= divisions; x++) {
                 const xPos = (x - divisions / 2) * segmentSize;
                 const zPos = (z - divisions / 2) * segmentSize;
-                const height = heightData[idx];
+                const height = heightData[vertexIdx / 3];
                 
                 // Normalize height for color interpolation with increased contrast
-                const normalizedHeight = Math.pow((height - minHeight) / (maxHeight - minHeight), 1.2);
+                const normalizedHeight = Math.pow((height - minHeight) / heightRange, 1.2);
                 
-                vertices.push(xPos, height, zPos);
+                // Set vertex position
+                this.vertexBuffer[vertexIdx++] = xPos;
+                this.vertexBuffer[vertexIdx++] = height;
+                this.vertexBuffer[vertexIdx++] = zPos;
                 
                 // Interpolate between base and peak color based on height
                 const color = new Color();
                 color.copy(TerrainParameters.BASE_COLOR).lerp(TerrainParameters.PEAK_COLOR, normalizedHeight);
-                colors.push(color.r, color.g, color.b);
-                uvs.push(x / divisions, z / divisions);
-                idx++;
+                
+                // Set vertex color
+                this.colorBuffer[colorIdx++] = color.r;
+                this.colorBuffer[colorIdx++] = color.g;
+                this.colorBuffer[colorIdx++] = color.b;
+                
+                // Set UV coordinates
+                this.uvBuffer[uvIdx++] = x / divisions;
+                this.uvBuffer[uvIdx++] = z / divisions;
             }
         }
 
         // Generate indices for triangles
+        let indexIdx = 0;
         for (let z = 0; z < divisions; z++) {
             for (let x = 0; x < divisions; x++) {
                 const a = x + (divisions + 1) * z;
@@ -314,16 +398,20 @@ export class TerrainGenerator {
                 const c = (x + 1) + (divisions + 1) * z;
                 const d = (x + 1) + (divisions + 1) * (z + 1);
 
-                indices.push(a, b, c);
-                indices.push(c, b, d);
+                this.indexBuffer[indexIdx++] = a;
+                this.indexBuffer[indexIdx++] = b;
+                this.indexBuffer[indexIdx++] = c;
+                this.indexBuffer[indexIdx++] = c;
+                this.indexBuffer[indexIdx++] = b;
+                this.indexBuffer[indexIdx++] = d;
             }
         }
 
-        // Add attributes to geometry
-        geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
-        geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-        geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
-        geometry.setIndex(indices);
+        // Add attributes to geometry using pre-allocated buffers
+        geometry.setAttribute('position', new Float32BufferAttribute(this.vertexBuffer, 3));
+        geometry.setAttribute('color', new Float32BufferAttribute(this.colorBuffer, 3));
+        geometry.setAttribute('uv', new Float32BufferAttribute(this.uvBuffer, 2));
+        geometry.setIndex(new BufferAttribute(this.indexBuffer, 1));
 
         // Create main terrain mesh with standard material
         const material = createTerrainMaterial(totalSize);
@@ -343,14 +431,18 @@ export class TerrainGenerator {
         // Create color array for edge vertices based on height
         const edgeColors: number[] = [];
         const edgePositions = baseEdgeGeometry.attributes.position.array;
+        
+        // Cache color objects for reuse
+        const edgeColor = new Color();
+        const whiteColor = new Color(0xffffff);
+        
         for (let i = 0; i < edgePositions.length; i += 6) {
             const y1 = edgePositions[i + 1];
             const y2 = edgePositions[i + 4];
             const avgHeight = (y1 + y2) / 2;
             
             // Normalize height and create color gradient
-            const normalizedHeight = (avgHeight - minHeight) / (maxHeight - minHeight);
-            const edgeColor = new Color();
+            const normalizedHeight = (avgHeight - minHeight) / heightRange;
             
             if (normalizedHeight < TerrainParameters.LOW_HEIGHT_THRESHOLD) {
                 // Low terrain - orange color
@@ -379,7 +471,7 @@ export class TerrainGenerator {
                 // Add slight color shift towards white for higher elevations
                 if (heightFactor > 0.5) {
                     const whiteBlend = (heightFactor - 0.5) * 0.4;
-                    edgeColor.lerp(new Color(0xffffff), whiteBlend);
+                    edgeColor.lerp(whiteColor, whiteBlend);
                 }
             }
             
@@ -398,26 +490,33 @@ export class TerrainGenerator {
         const halfSize = totalSize / 2;
         const markerOffset = CoordinateMarkerParameters.HEIGHT_OFFSET;
         
-        // Cardinal directions with coordinates
+        // Create marker group
+        this.markerGroup = new Object3D();
+        this.markerGroup.name = 'coordinateMarkers';
+        
+        // Pre-calculate marker positions and texts
         const markers = [
-            { pos: [halfSize, 0, 0], text: 'E\n(2000,0)', color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [-halfSize, 0, 0], text: 'W\n(-2000,0)', color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [0, 0, halfSize], text: 'S\n(0,2000)', color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [0, 0, -halfSize], text: 'N\n(0,-2000)', color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            // Corner coordinates with line breaks for better readability
-            { pos: [halfSize, 0, halfSize], text: 'SE\n(2000,2000)', color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [-halfSize, 0, halfSize], text: 'SW\n(-2000,2000)', color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [halfSize, 0, -halfSize], text: 'NE\n(2000,-2000)', color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [-halfSize, 0, -halfSize], text: 'NW\n(-2000,-2000)', color: CoordinateMarkerParameters.CORNER_COLOR }
+            { pos: [halfSize, 0, 0], text: `E\n(${Math.round(halfSize)},0)`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
+            { pos: [-halfSize, 0, 0], text: `W\n(${-Math.round(halfSize)},0)`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
+            { pos: [0, 0, halfSize], text: `S\n(0,${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
+            { pos: [0, 0, -halfSize], text: `N\n(0,${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
+            { pos: [halfSize, 0, halfSize], text: `SE\n(${Math.round(halfSize)},${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
+            { pos: [-halfSize, 0, halfSize], text: `SW\n(${-Math.round(halfSize)},${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
+            { pos: [halfSize, 0, -halfSize], text: `NE\n(${Math.round(halfSize)},${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
+            { pos: [-halfSize, 0, -halfSize], text: `NW\n(${-Math.round(halfSize)},${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR }
         ];
 
+        // Create markers in the marker group
         markers.forEach(marker => {
             const sprite = this.createCoordinateSprite(marker.text, marker.color);
             const [x, y, z] = marker.pos;
             sprite.position.set(x, markerOffset, z);
-            sprite.scale.copy(CoordinateMarkerParameters.SCALE);
-            mesh.add(sprite);
+            sprite.scale.set(300, 150, 1);
+            this.markerGroup!.add(sprite);
         });
+
+        // Add marker group to mesh
+        mesh.add(this.markerGroup);
 
         return mesh;
     }
@@ -426,95 +525,68 @@ export class TerrainGenerator {
      * Generate base terrain height (angular plateaus)
      */
     private generateBaseHeight(noise: SimplexNoise, x: number, z: number): number {
-        let height = 0;
-        let amplitude = 1;
-        let frequency = TerrainParameters.NOISE_SCALE;
-        let maxAmplitude = 0;
-
-        for (let i = 0; i < TerrainParameters.BASE_NOISE_OCTAVES; i++) {
-            // Use multiple noise patterns for smoother terrain
-            const n1 = noise.noise(x * frequency, z * frequency);
-            const n2 = Math.abs(noise.noise(x * frequency * 1.1, z * frequency * 1.1));
-            const n3 = noise.noise(x * frequency * 0.7, z * frequency * 0.7);
-            
-            // Blend for smoother transitions while maintaining some angularity
-            const noiseValue = (
-                n1 * TerrainParameters.BASE_NOISE_WEIGHTS[0] +
-                n2 * TerrainParameters.BASE_NOISE_WEIGHTS[1] +
-                n3 * TerrainParameters.BASE_NOISE_WEIGHTS[2]
-            );
-            
-            height += noiseValue * amplitude;
-            maxAmplitude += amplitude;
-            amplitude *= TerrainParameters.BASE_AMPLITUDE_FALLOFF;
-            frequency *= TerrainParameters.BASE_FREQUENCY_INCREASE;
-        }
-
-        return (height / maxAmplitude);
+        return this.generateNoise(
+            noise,
+            x,
+            z,
+            TerrainParameters.NOISE_SCALE,
+            TerrainParameters.BASE_NOISE_OCTAVES,
+            [
+                { frequencyMultiplier: 1.0 },
+                { frequencyMultiplier: 1.1, useAbsolute: true },
+                { frequencyMultiplier: 0.7 }
+            ],
+            TerrainParameters.BASE_NOISE_WEIGHTS,
+            TerrainParameters.BASE_AMPLITUDE_FALLOFF,
+            TerrainParameters.BASE_FREQUENCY_INCREASE
+        );
     }
 
     /**
      * Generate mountain peak height
      */
     private generatePeakHeight(noise: SimplexNoise, x: number, z: number): number {
-        let height = 0;
-        let amplitude = 1;
-        let frequency = TerrainParameters.NOISE_SCALE * TerrainParameters.PEAK_NOISE_FREQUENCY_MULTIPLIER;
-        let maxAmplitude = 0;
-
-        for (let i = 0; i < TerrainParameters.NOISE_OCTAVES; i++) {
-            // Use multiple noise patterns with broader frequency range
-            const n1 = noise.noise(x * frequency + 1000, z * frequency + 1000);
-            const n2 = Math.abs(noise.noise(x * frequency * 0.8, z * frequency * 0.8));
-            const n3 = noise.noise(x * frequency * 0.4 + 2000, z * frequency * 0.4 + 2000);
-            const n4 = Math.abs(noise.noise(x * frequency * 0.2 + 3000, z * frequency * 0.2 + 3000));
-            
-            // Weighted blend favoring broader features
-            const noiseValue = (
-                n1 * TerrainParameters.PEAK_NOISE_WEIGHTS[0] +
-                n2 * TerrainParameters.PEAK_NOISE_WEIGHTS[1] +
-                n3 * TerrainParameters.PEAK_NOISE_WEIGHTS[2] +
-                n4 * TerrainParameters.PEAK_NOISE_WEIGHTS[3]
-            );
-            
-            height += noiseValue * amplitude;
-            maxAmplitude += amplitude;
-            amplitude *= TerrainParameters.PERSISTENCE;
-            frequency *= TerrainParameters.LACUNARITY;
-        }
+        // Use the noise configurations directly from TerrainParameters
+        const height = this.generateNoise(
+            noise,
+            x,
+            z,
+            TerrainParameters.NOISE_SCALE * TerrainParameters.PEAK_NOISE_FREQUENCY_MULTIPLIER,
+            TerrainParameters.NOISE_OCTAVES,
+            TerrainParameters.PEAK_NOISE_CONFIGS,
+            TerrainParameters.PEAK_NOISE_WEIGHTS,
+            TerrainParameters.PERSISTENCE,
+            TerrainParameters.LACUNARITY
+        );
 
         // Multi-stage threshold with broader transition
-        height = (height / maxAmplitude);
-        const normalizedHeight = (height - TerrainParameters.PEAK_LOW_THRESHOLD) / (TerrainParameters.PEAK_HIGH_THRESHOLD - TerrainParameters.PEAK_LOW_THRESHOLD);
+        const normalizedHeight = (height - TerrainParameters.PEAK_LOW_THRESHOLD) / 
+            (TerrainParameters.PEAK_HIGH_THRESHOLD - TerrainParameters.PEAK_LOW_THRESHOLD);
         
         if (normalizedHeight <= 0) return 0;
         if (normalizedHeight >= 1) return 1;
         
         // Smoother transition using double smoothstep
-        const smoothstep = (x: number): number => {
-            x = Math.max(0, Math.min(1, x));
-            return x * x * (3 - 2 * x);
-        };
-        return smoothstep(smoothstep(normalizedHeight));
+        return this.smoothstep(this.smoothstep(normalizedHeight));
     }
 
     /**
      * Transform height value to create more angular terrain
+     * Designed to be configurable via UI controls in the future
      */
     private angularizeHeight(height: number): number {
-        // Increased steps for more subtle transitions
+        // Calculate stepped height based on configurable steps
         const steppedHeight = Math.floor(height * TerrainParameters.ANGULAR_STEPS) / TerrainParameters.ANGULAR_STEPS;
         
-        // Use smoothstep function for more natural transitions between steps
-        const smoothstep = (x: number): number => {
-            x = Math.max(0, Math.min(1, x));
-            return x * x * (3 - 2 * x);
-        };
-        
         // Calculate blend factor based on height to vary angularity
-        const heightFactor = smoothstep(height);
-        const blend = TerrainParameters.MIN_ANGULAR_BLEND + heightFactor * (TerrainParameters.MAX_ANGULAR_BLEND - TerrainParameters.MIN_ANGULAR_BLEND);
+        // This can be adjusted via UI in the future
+        const heightFactor = Math.pow(this.smoothstep(height), TerrainParameters.ANGULAR_HEIGHT_FACTOR_POWER);
+        const blend = TerrainParameters.MIN_ANGULAR_BLEND + 
+            Math.pow(heightFactor, TerrainParameters.ANGULAR_BLEND_CURVE) * 
+            (TerrainParameters.MAX_ANGULAR_BLEND - TerrainParameters.MIN_ANGULAR_BLEND);
         
+        // Linear interpolation between smooth and stepped height
+        // The blend factor controls how angular the terrain appears
         return height * (1 - blend) + steppedHeight * blend;
     }
 
@@ -528,18 +600,71 @@ export class TerrainGenerator {
         }
     }
 
+    /**
+     * Show coordinate markers
+     */
+    public showCoordinateMarkers(): void {
+        if (this.markerGroup) {
+            this.markerGroup.visible = true;
+        }
+    }
+
+    /**
+     * Hide coordinate markers
+     */
+    public hideCoordinateMarkers(): void {
+        if (this.markerGroup) {
+            this.markerGroup.visible = false;
+        }
+    }
+
+    /**
+     * Set coordinate markers visibility
+     */
+    public setCoordinateMarkersVisible(visible: boolean): void {
+        if (this.markerGroup) {
+            this.markerGroup.visible = visible;
+        }
+    }
+
+    /**
+     * Get current coordinate markers visibility state
+     */
+    public areCoordinateMarkersVisible(): boolean {
+        return this.markerGroup ? this.markerGroup.visible : false;
+    }
+
     public dispose(): void {
-        if (this.material instanceof Material) {
-            this.material.dispose();
-        }
-        if (this.noiseTexture) {
-            this.noiseTexture.dispose();
-        }
         if (this.terrainMesh) {
-            this.terrainMesh.geometry.dispose();
-            if (this.terrainMesh.material instanceof Material) {
-                this.terrainMesh.material.dispose();
+            this.scene.remove(this.terrainMesh);
+            if (this.terrainMesh.geometry) {
+                this.terrainMesh.geometry.dispose();
             }
+            if (this.terrainMesh.material) {
+                if (Array.isArray(this.terrainMesh.material)) {
+                    this.terrainMesh.material.forEach(material => material.dispose());
+                } else {
+                    this.terrainMesh.material.dispose();
+                }
+            }
+            // Clean up marker sprites
+            if (this.markerGroup) {
+                this.markerGroup.traverse((child) => {
+                    if (child instanceof Sprite) {
+                        const material = child.material as SpriteMaterial;
+                        if (material.map) {
+                            material.map.dispose();
+                        }
+                        material.dispose();
+                    }
+                });
+            }
+            this.terrainMesh = null;
+            this.markerGroup = null;
+        }
+        if (this.material) {
+            this.material.dispose();
+            this.material = null;
         }
     }
 } 

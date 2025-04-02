@@ -15,13 +15,13 @@ export const GridParameters = {
     /** Size of individual grid cells */
     CELL_SIZE: 64,
     
-    /** Grid line colors */
-    MAIN_COLOR: 0x444444,
-    SECONDARY_COLOR: 0x888888,
-    
-    /** Panel settings */
-    PANEL_BORDER_WIDTH: 0.95,
-    PANEL_VARIATION: 0.1
+    /** Validation constraints */
+    MIN_DIVISIONS: 1,
+    MAX_DIVISIONS: 1000,
+    MIN_CELL_SIZE: 16,
+    MAX_CELL_SIZE: 256,
+    MIN_TOTAL_SIZE: 1000,
+    MAX_TOTAL_SIZE: 10000
 } as const;
 
 export const TerrainParameters = {
@@ -45,10 +45,22 @@ export const TerrainParameters = {
     PEAK_LOW_THRESHOLD: 0.25,
     PEAK_HIGH_THRESHOLD: 0.6,
     
+    /** Peak noise configurations for UI control */
+    PEAK_NOISE_CONFIGS: [
+        { frequencyMultiplier: 1.0, offset: 1000, useAbsolute: false },
+        { frequencyMultiplier: 0.8, offset: 0, useAbsolute: true },
+        { frequencyMultiplier: 0.4, offset: 2000, useAbsolute: false },
+        { frequencyMultiplier: 0.2, offset: 3000, useAbsolute: true }
+    ],
+    
     /** Angular terrain settings */
     ANGULAR_STEPS: 20,
     MIN_ANGULAR_BLEND: 0.3,
     MAX_ANGULAR_BLEND: 0.5,
+    
+    /** Angular terrain height-based settings */
+    ANGULAR_HEIGHT_FACTOR_POWER: 1.0,  // Controls how height affects angularity
+    ANGULAR_BLEND_CURVE: 0.5,          // Controls the curve of the blend transition
     
     /** Edge parameters */
     LOW_HEIGHT_THRESHOLD: 0.15,
