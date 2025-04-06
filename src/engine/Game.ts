@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GridSystem } from './terrain/GridSystem';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
-import { SunControl } from './ui/SunControl';
 
 export class Game {
     private scene: THREE.Scene;
@@ -13,7 +12,6 @@ export class Game {
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
     private lightingSystem: LightingSystem | null = null;
-    private sunControl: SunControl | null = null;
     private clock: THREE.Clock = new THREE.Clock();
     private lastTime: number = 0;
 
@@ -53,10 +51,7 @@ export class Game {
         
         // Then initialize grid and terrain
         this.gridSystem = new GridSystem(this.scene, this.camera);
-        this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem);
-        
-        // Finally initialize UI controls
-        this.sunControl = new SunControl(this.lightingSystem);
+        this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem, this.camera, this.lightingSystem);
 
         // Set initial sun height
         if (this.lightingSystem) {
@@ -103,9 +98,6 @@ export class Game {
     public dispose(): void {
         if (this.terrainGenerator) {
             this.terrainGenerator.dispose();
-        }
-        if (this.sunControl) {
-            this.sunControl.dispose();
         }
         if (this.lightingSystem) {
             this.lightingSystem.dispose();

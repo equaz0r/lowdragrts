@@ -31,6 +31,8 @@ import {
 import { GridSystem } from './GridSystem';
 import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise';
 import { TerrainParameters, ReflectionParameters, CoordinateMarkerParameters } from '../config/GameParameters';
+import { ReflectionControls } from '../ui/ReflectionControls';
+import { LightingSystem } from './LightingSystem';
 
 // Define the shader parameter type that Three.js uses
 interface WebGLProgramParametersWithUniforms {
@@ -38,131 +40,6 @@ interface WebGLProgramParametersWithUniforms {
     vertexShader: string;
     fragmentShader: string;
 }
-
-// Create base material for the terrain
-const createTerrainMaterial = (gridSize: number) => {
-    const material = new MeshStandardMaterial({
-        vertexColors: true,
-        wireframe: TerrainParameters.USE_WIREFRAME,
-        metalness: TerrainParameters.MATERIAL_METALNESS,
-        roughness: TerrainParameters.MATERIAL_ROUGHNESS,
-        flatShading: TerrainParameters.USE_FLAT_SHADING,
-        side: DoubleSide
-    });
-
-    // Add shader customization
-    material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms, renderer: WebGLRenderer) => {
-        console.log('Compiling terrain shader...');
-        
-        // Add custom uniforms
-        shader.uniforms.sunDirection = { value: new Vector3(-1, 0.3, 0).normalize() };
-        shader.uniforms.cameraDirection = { value: new Vector3() };
-        shader.uniforms.gridSize = { value: gridSize };
-        shader.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
-        shader.uniforms.sunColor = { value: new Color(1.0, 0.98, 0.9) };
-        shader.uniforms.sunIntensity = { value: ReflectionParameters.SUN_INTENSITY };
-
-        // Add varying for world-space values and grid position
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
-            varying vec3 vWorldPosition;
-            varying vec3 vWorldNormal;
-            varying vec2 vGridPosition;`
-        );
-
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <begin_vertex>',
-            `#include <begin_vertex>
-            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-            vWorldNormal = normalize(normalMatrix * normal);
-            vGridPosition = position.xz / 100.0;`
-        );
-
-        // Add to fragment shader for panel effect and reflection
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `#include <common>
-            uniform vec3 sunDirection;
-            uniform vec3 cameraDirection;
-            uniform vec4 reflectionParams;
-            uniform vec3 sunColor;
-            uniform float sunIntensity;
-            varying vec3 vWorldPosition;
-            varying vec3 vWorldNormal;
-            varying vec2 vGridPosition;
-
-            float getPanelFactor() {
-                vec2 grid = floor(vGridPosition);
-                vec2 frac = fract(vGridPosition);
-                float border = step(${TerrainParameters.PANEL_BORDER_WIDTH.toFixed(2)}, max(frac.x, frac.y));
-                float variation = fract(sin(dot(grid, vec2(12.9898, 78.233))) * 43758.5453);
-                return mix(1.0, 0.7, border) * (0.9 + ${TerrainParameters.PANEL_VARIATION.toFixed(2)} * variation);
-            }
-
-            float calculateReflection() {
-                vec3 normalizedNormal = normalize(vWorldNormal);
-                vec3 normalizedCameraDir = normalize(cameraDirection);
-                
-                float sunDot = max(0.0, dot(normalizedNormal, sunDirection));
-                float sunFactor = pow(sunDot, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
-                
-                vec3 reflectionDir = reflect(-sunDirection, normalizedNormal);
-                float viewDot = max(0.0, dot(normalizedCameraDir, reflectionDir));
-                float viewFactor = pow(viewDot, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
-                
-                float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
-                float positionFactor = smoothstep(0.0, reflectionParams.z, 1.0 - distanceFromWest);
-                
-                float panelFactor = getPanelFactor();
-                
-                float heightFactor = 1.0 - abs(normalizedNormal.y);
-                heightFactor = pow(heightFactor, ${ReflectionParameters.HEIGHT_FACTOR_POWER.toFixed(2)});
-                
-                float grazingDot = 1.0 - abs(dot(normalizedNormal, normalizedCameraDir));
-                float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
-                
-                float totalFactor = pow(
-                    viewFactor * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(1)} +
-                    sunFactor * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(1)} +
-                    positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(1)} +
-                    panelFactor * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(1)} +
-                    grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(1)},
-                    reflectionParams.w
-                );
-                
-                return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor * sunIntensity);
-            }`
-        );
-
-        // Modify material properties based on reflection
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>
-            float reflectionStrength = calculateReflection();
-            
-            vec3 reflectionColor = sunColor * reflectionStrength;
-            diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <roughnessmap_fragment>',
-            `#include <roughnessmap_fragment>
-            roughnessFactor = mix(reflectionParams.y, 0.1, reflectionStrength);`
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <metalnessmap_fragment>',
-            `#include <metalnessmap_fragment>
-            metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);`
-        );
-
-        // Store modified shader for updates
-        (material as any).customShader = shader;
-    };
-
-    return material;
-};
 
 export class TerrainGenerator {
     private readonly gridSystem: GridSystem;
@@ -172,28 +49,237 @@ export class TerrainGenerator {
     private terrainMesh: Mesh | null = null;
     private markerGroup: Object3D | null = null;
     private readonly noise: SimplexNoise;
-    private readonly vertexBuffer: Float32Array;
-    private readonly colorBuffer: Float32Array;
-    private readonly uvBuffer: Float32Array;
-    private readonly indexBuffer: Uint32Array;
+    private readonly bufferPool: {
+        vertex: Float32Array;
+        color: Float32Array;
+        uv: Float32Array;
+        index: Uint32Array;
+        height: Float32Array;
+    };
+    private shaderMaterial: WebGLProgramParametersWithUniforms | null = null;
+    private geometry: BufferGeometry | null = null;
+    private reflectionControls: ReflectionControls;
 
-    constructor(scene: Scene, gridSystem: GridSystem) {
+    constructor(scene: Scene, gridSystem: GridSystem, camera: PerspectiveCamera, lightingSystem: LightingSystem) {
         this.scene = scene;
         this.gridSystem = gridSystem;
-        this.camera = gridSystem.getCamera();
+        this.camera = camera;
         this.noise = new SimplexNoise();
         
-        // Pre-allocate buffers for terrain data
+        // Initialize buffer pool with maximum possible size
         const divisions = this.gridSystem.getGridDivisions() * 2;
         const vertexCount = (divisions + 1) * (divisions + 1);
         const indexCount = divisions * divisions * 6;
         
-        this.vertexBuffer = new Float32Array(vertexCount * 3);
-        this.colorBuffer = new Float32Array(vertexCount * 3);
-        this.uvBuffer = new Float32Array(vertexCount * 2);
-        this.indexBuffer = new Uint32Array(indexCount);
+        this.bufferPool = {
+            vertex: new Float32Array(vertexCount * 3),
+            color: new Float32Array(vertexCount * 3),
+            uv: new Float32Array(vertexCount * 2),
+            index: new Uint32Array(indexCount),
+            height: new Float32Array(vertexCount)
+        };
+
+        // Initialize reflection controls with lighting system
+        this.reflectionControls = new ReflectionControls((params, intensity) => {
+            if (this.shaderMaterial?.uniforms) {
+                this.shaderMaterial.uniforms.reflectionParams.value.copy(params);
+                this.shaderMaterial.uniforms.sunIntensity.value = intensity;
+            }
+        }, lightingSystem);
         
         this.initialize();
+    }
+
+    private disposeGeometry(): void {
+        if (this.geometry) {
+            this.geometry.dispose();
+            this.geometry = null;
+        }
+    }
+
+    public dispose(): void {
+        this.disposeGeometry();
+        if (this.material) {
+            this.material.dispose();
+            this.material = null;
+        }
+        if (this.terrainMesh) {
+            this.scene.remove(this.terrainMesh);
+            this.terrainMesh = null;
+        }
+        // Clear buffer pool references
+        Object.keys(this.bufferPool).forEach(key => {
+            (this.bufferPool as any)[key] = null;
+        });
+        // Dispose reflection controls
+        this.reflectionControls.dispose();
+    }
+
+    public async generate(): Promise<Mesh> {
+        this.disposeGeometry();
+        this.geometry = new BufferGeometry();
+        const totalSize = this.gridSystem.getTotalSize();
+        const divisions = this.gridSystem.getGridDivisions() * 2;
+        const segmentSize = totalSize / divisions;
+
+        let minHeight = Infinity;
+        let maxHeight = -Infinity;
+
+        // First pass: Generate heights and find min/max
+        for (let z = 0; z <= divisions; z++) {
+            for (let x = 0; x <= divisions; x++) {
+                const index = x + z * (divisions + 1);
+                const xPos = (x - divisions / 2) * segmentSize;
+                const zPos = (z - divisions / 2) * segmentSize;
+                
+                const baseHeight = this.generateBaseHeight(this.noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
+                const peakHeight = this.generatePeakHeight(this.noise, xPos, zPos);
+                const rawHeight = baseHeight * 0.3 + peakHeight * 0.7;
+                const height = this.angularizeHeight(rawHeight) * TerrainParameters.HEIGHT_SCALE;
+                
+                this.bufferPool.height[index] = height;
+                minHeight = Math.min(minHeight, height);
+                maxHeight = Math.max(maxHeight, height);
+            }
+        }
+
+        const heightRange = maxHeight - minHeight;
+
+        // Second pass: Generate vertices and colors with normalized heights
+        let vertexIdx = 0;
+        let colorIdx = 0;
+        let uvIdx = 0;
+        
+        for (let z = 0; z <= divisions; z++) {
+            for (let x = 0; x <= divisions; x++) {
+                const index = x + z * (divisions + 1);
+                const xPos = (x - divisions / 2) * segmentSize;
+                const zPos = (z - divisions / 2) * segmentSize;
+                const height = this.bufferPool.height[index];
+                
+                const normalizedHeight = Math.pow((height - minHeight) / heightRange, 1.2);
+                
+                // Set vertex position
+                this.bufferPool.vertex[vertexIdx++] = xPos;
+                this.bufferPool.vertex[vertexIdx++] = height;
+                this.bufferPool.vertex[vertexIdx++] = zPos;
+                
+                // Set vertex color (darker base color for better contrast)
+                const color = new Color();
+                color.copy(TerrainParameters.BASE_COLOR)
+                    .multiplyScalar(0.3) // Darken the base color
+                    .lerp(TerrainParameters.PEAK_COLOR, normalizedHeight);
+                
+                this.bufferPool.color[colorIdx++] = color.r;
+                this.bufferPool.color[colorIdx++] = color.g;
+                this.bufferPool.color[colorIdx++] = color.b;
+                
+                // Set UV coordinates
+                this.bufferPool.uv[uvIdx++] = x / divisions;
+                this.bufferPool.uv[uvIdx++] = z / divisions;
+            }
+        }
+
+        // Generate indices
+        let indexIdx = 0;
+        for (let z = 0; z < divisions; z++) {
+            for (let x = 0; x < divisions; x++) {
+                const a = x + (divisions + 1) * z;
+                const b = x + (divisions + 1) * (z + 1);
+                const c = (x + 1) + (divisions + 1) * z;
+                const d = (x + 1) + (divisions + 1) * (z + 1);
+
+                this.bufferPool.index[indexIdx++] = a;
+                this.bufferPool.index[indexIdx++] = b;
+                this.bufferPool.index[indexIdx++] = c;
+                this.bufferPool.index[indexIdx++] = c;
+                this.bufferPool.index[indexIdx++] = b;
+                this.bufferPool.index[indexIdx++] = d;
+            }
+        }
+
+        // Set geometry attributes using buffer pool
+        this.geometry.setAttribute('position', new Float32BufferAttribute(this.bufferPool.vertex, 3));
+        this.geometry.setAttribute('color', new Float32BufferAttribute(this.bufferPool.color, 3));
+        this.geometry.setAttribute('uv', new Float32BufferAttribute(this.bufferPool.uv, 2));
+        this.geometry.setIndex(new BufferAttribute(this.bufferPool.index, 1));
+        this.geometry.computeVertexNormals();
+
+        // Create main terrain mesh with material
+        const material = this.createTerrainMaterial(totalSize);
+        const mesh = new Mesh(this.geometry, material);
+
+        // Create edge wireframe
+        const baseEdgeGeometry = new EdgesGeometry(this.geometry, 0.1);
+        const baseEdgeMaterial = new LineBasicMaterial({ 
+            vertexColors: true,
+            transparent: true,
+            opacity: TerrainParameters.EDGE_OPACITY,
+            blending: AdditiveBlending,
+            depthWrite: false
+        });
+
+        // Create color array for edge vertices based on height
+        const edgeColors: number[] = [];
+        const edgePositions = baseEdgeGeometry.attributes.position.array;
+        const edgeColor = new Color();
+        const whiteColor = new Color(0xffffff);
+
+        for (let i = 0; i < edgePositions.length; i += 6) {
+            const y1 = edgePositions[i + 1];
+            const y2 = edgePositions[i + 4];
+            const avgHeight = (y1 + y2) / 2;
+            
+            // Normalize height and create color gradient
+            const normalizedHeight = (avgHeight - minHeight) / heightRange;
+            
+            if (normalizedHeight < TerrainParameters.LOW_HEIGHT_THRESHOLD) {
+                // Low terrain - orange color
+                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR);
+                // Adjust opacity based on grid alignment
+                const x1 = edgePositions[i];
+                const z1 = edgePositions[i + 2];
+                const x2 = edgePositions[i + 3];
+                const z2 = edgePositions[i + 5];
+                const isAligned = Math.abs(x1 - x2) < 0.1 || Math.abs(z1 - z2) < 0.1;
+                const intensity = isAligned ? TerrainParameters.ALIGNED_EDGE_INTENSITY : TerrainParameters.NON_ALIGNED_EDGE_INTENSITY;
+                edgeColor.multiplyScalar(intensity);
+            } else if (normalizedHeight < TerrainParameters.TRANSITION_THRESHOLD) {
+                // Transition zone - blend between orange and green
+                const t = (normalizedHeight - TerrainParameters.LOW_HEIGHT_THRESHOLD) / 
+                         (TerrainParameters.TRANSITION_THRESHOLD - TerrainParameters.LOW_HEIGHT_THRESHOLD);
+                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR).lerp(TerrainParameters.HIGH_EDGE_COLOR, t);
+                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + 
+                                (t * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
+                edgeColor.multiplyScalar(intensity);
+            } else {
+                // Higher terrain - green with increasing intensity
+                const heightFactor = (normalizedHeight - TerrainParameters.TRANSITION_THRESHOLD) / 
+                                   (1 - TerrainParameters.TRANSITION_THRESHOLD);
+                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + 
+                                (heightFactor * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
+                edgeColor.copy(TerrainParameters.HIGH_EDGE_COLOR).multiplyScalar(intensity);
+                
+                // Add white blend for higher elevations
+                if (heightFactor > 0.5) {
+                    const whiteBlend = (heightFactor - 0.5) * 0.4;
+                    edgeColor.lerp(whiteColor, whiteBlend);
+                }
+            }
+            
+            // Add colors for both vertices of the edge
+            edgeColors.push(
+                edgeColor.r, edgeColor.g, edgeColor.b,
+                edgeColor.r, edgeColor.g, edgeColor.b
+            );
+        }
+
+        // Apply colors to edge geometry
+        baseEdgeGeometry.setAttribute('color', new Float32BufferAttribute(edgeColors, 3));
+        const baseEdges = new LineSegments(baseEdgeGeometry, baseEdgeMaterial);
+        mesh.add(baseEdges);
+
+        return mesh;
     }
 
     /**
@@ -313,212 +399,129 @@ export class TerrainGenerator {
         return height / maxAmplitude;
     }
 
-    /**
-     * Generate terrain mesh
-     */
-    public async generate(): Promise<Mesh> {
-        // Create geometry
-        const geometry = new BufferGeometry();
-        const totalSize = this.gridSystem.getTotalSize();
-        const divisions = this.gridSystem.getGridDivisions() * 2; // Double the divisions
-        const segmentSize = totalSize / divisions;
-
-        // Generate height data
-        const heightData: number[] = [];
-        let minHeight = Infinity;
-        let maxHeight = -Infinity;
-
-        // First pass: Generate heights and find min/max
-        for (let z = 0; z <= divisions; z++) {
-            for (let x = 0; x <= divisions; x++) {
-                const xPos = (x - divisions / 2) * segmentSize;
-                const zPos = (z - divisions / 2) * segmentSize;
-                
-                // Generate base terrain (angular plateaus)
-                const baseHeight = this.generateBaseHeight(this.noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
-                
-                // Generate mountain peaks
-                const peakHeight = this.generatePeakHeight(this.noise, xPos, zPos);
-                
-                // Combine heights with angular transition
-                const rawHeight = baseHeight * 0.3 + peakHeight * 0.7;
-                
-                // Apply angular transformation
-                const height = this.angularizeHeight(rawHeight) * TerrainParameters.HEIGHT_SCALE;
-                
-                heightData.push(height);
-                minHeight = Math.min(minHeight, height);
-                maxHeight = Math.max(maxHeight, height);
-            }
-        }
-
-        // Cache height range for normalization
-        const heightRange = maxHeight - minHeight;
-
-        // Second pass: Generate vertices and colors with normalized heights
-        let vertexIdx = 0;
-        let colorIdx = 0;
-        let uvIdx = 0;
-        
-        for (let z = 0; z <= divisions; z++) {
-            for (let x = 0; x <= divisions; x++) {
-                const xPos = (x - divisions / 2) * segmentSize;
-                const zPos = (z - divisions / 2) * segmentSize;
-                const height = heightData[vertexIdx / 3];
-                
-                // Normalize height for color interpolation with increased contrast
-                const normalizedHeight = Math.pow((height - minHeight) / heightRange, 1.2);
-                
-                // Set vertex position
-                this.vertexBuffer[vertexIdx++] = xPos;
-                this.vertexBuffer[vertexIdx++] = height;
-                this.vertexBuffer[vertexIdx++] = zPos;
-                
-                // Interpolate between base and peak color based on height
-                const color = new Color();
-                color.copy(TerrainParameters.BASE_COLOR).lerp(TerrainParameters.PEAK_COLOR, normalizedHeight);
-                
-                // Set vertex color
-                this.colorBuffer[colorIdx++] = color.r;
-                this.colorBuffer[colorIdx++] = color.g;
-                this.colorBuffer[colorIdx++] = color.b;
-                
-                // Set UV coordinates
-                this.uvBuffer[uvIdx++] = x / divisions;
-                this.uvBuffer[uvIdx++] = z / divisions;
-            }
-        }
-
-        // Generate indices for triangles
-        let indexIdx = 0;
-        for (let z = 0; z < divisions; z++) {
-            for (let x = 0; x < divisions; x++) {
-                const a = x + (divisions + 1) * z;
-                const b = x + (divisions + 1) * (z + 1);
-                const c = (x + 1) + (divisions + 1) * z;
-                const d = (x + 1) + (divisions + 1) * (z + 1);
-
-                this.indexBuffer[indexIdx++] = a;
-                this.indexBuffer[indexIdx++] = b;
-                this.indexBuffer[indexIdx++] = c;
-                this.indexBuffer[indexIdx++] = c;
-                this.indexBuffer[indexIdx++] = b;
-                this.indexBuffer[indexIdx++] = d;
-            }
-        }
-
-        // Add attributes to geometry using pre-allocated buffers
-        geometry.setAttribute('position', new Float32BufferAttribute(this.vertexBuffer, 3));
-        geometry.setAttribute('color', new Float32BufferAttribute(this.colorBuffer, 3));
-        geometry.setAttribute('uv', new Float32BufferAttribute(this.uvBuffer, 2));
-        geometry.setIndex(new BufferAttribute(this.indexBuffer, 1));
-
-        // Create main terrain mesh with standard material
-        const material = createTerrainMaterial(totalSize);
-        const mesh = new Mesh(geometry, material);
-
-        // Base terrain edges with enhanced gradient
-        const baseEdgeGeometry = new EdgesGeometry(geometry, 0.1);
-        const baseEdgeMaterial = new LineBasicMaterial({ 
+    private createTerrainMaterial(gridSize: number): MeshStandardMaterial {
+        const material = new MeshStandardMaterial({
             vertexColors: true,
-            transparent: true,
-            opacity: TerrainParameters.EDGE_OPACITY,
-            blending: AdditiveBlending,
-            depthWrite: false
+            wireframe: TerrainParameters.USE_WIREFRAME,
+            metalness: TerrainParameters.MATERIAL_METALNESS,
+            roughness: TerrainParameters.MATERIAL_ROUGHNESS,
+            flatShading: TerrainParameters.USE_FLAT_SHADING,
+            side: DoubleSide
         });
-        const baseEdges = new LineSegments(baseEdgeGeometry, baseEdgeMaterial);
 
-        // Create color array for edge vertices based on height
-        const edgeColors: number[] = [];
-        const edgePositions = baseEdgeGeometry.attributes.position.array;
-        
-        // Cache color objects for reuse
-        const edgeColor = new Color();
-        const whiteColor = new Color(0xffffff);
-        
-        for (let i = 0; i < edgePositions.length; i += 6) {
-            const y1 = edgePositions[i + 1];
-            const y2 = edgePositions[i + 4];
-            const avgHeight = (y1 + y2) / 2;
+        // Add shader customization
+        material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+            console.log('Compiling terrain shader...');
+            this.shaderMaterial = shader;
             
-            // Normalize height and create color gradient
-            const normalizedHeight = (avgHeight - minHeight) / heightRange;
-            
-            if (normalizedHeight < TerrainParameters.LOW_HEIGHT_THRESHOLD) {
-                // Low terrain - orange color
-                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR);
-                // Adjust opacity based on grid alignment
-                const x1 = edgePositions[i];
-                const z1 = edgePositions[i + 2];
-                const x2 = edgePositions[i + 3];
-                const z2 = edgePositions[i + 5];
-                const isAligned = Math.abs(x1 - x2) < 0.1 || Math.abs(z1 - z2) < 0.1;
-                const intensity = isAligned ? TerrainParameters.ALIGNED_EDGE_INTENSITY : TerrainParameters.NON_ALIGNED_EDGE_INTENSITY;
-                edgeColor.multiplyScalar(intensity);
-            } else if (normalizedHeight < TerrainParameters.TRANSITION_THRESHOLD) {
-                // Quick transition zone - blend between orange and green
-                const t = (normalizedHeight - TerrainParameters.LOW_HEIGHT_THRESHOLD) / (TerrainParameters.TRANSITION_THRESHOLD - TerrainParameters.LOW_HEIGHT_THRESHOLD);
-                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR).lerp(TerrainParameters.HIGH_EDGE_COLOR, t);
-                // Apply intensity based on height
-                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + (t * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
-                edgeColor.multiplyScalar(intensity);
-            } else {
-                // Rest of terrain - green with increasing intensity
-                const heightFactor = (normalizedHeight - TerrainParameters.TRANSITION_THRESHOLD) / (1 - TerrainParameters.TRANSITION_THRESHOLD);
-                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + (heightFactor * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
-                edgeColor.copy(TerrainParameters.HIGH_EDGE_COLOR).multiplyScalar(intensity);
-                
-                // Add slight color shift towards white for higher elevations
-                if (heightFactor > 0.5) {
-                    const whiteBlend = (heightFactor - 0.5) * 0.4;
-                    edgeColor.lerp(whiteColor, whiteBlend);
-                }
-            }
-            
-            // Add colors for both vertices of the edge
-            edgeColors.push(
-                edgeColor.r, edgeColor.g, edgeColor.b,
-                edgeColor.r, edgeColor.g, edgeColor.b
+            // Add custom uniforms
+            shader.uniforms.sunDirection = { value: new Vector3(-1, 0.3, 0).normalize() };
+            shader.uniforms.cameraDirection = { value: new Vector3() };
+            shader.uniforms.gridSize = { value: gridSize };
+            shader.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
+            shader.uniforms.sunColor = { value: new Color(1.0, 0.98, 0.9) };
+            shader.uniforms.sunIntensity = { value: ReflectionParameters.SUN_INTENSITY };
+
+            // Add varying for world-space values and grid position
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <common>',
+                `#include <common>
+                varying vec3 vWorldPosition;
+                varying vec3 vWorldNormal;
+                varying vec2 vGridPosition;`
             );
-        }
 
-        // Apply colors to base edges
-        baseEdgeGeometry.setAttribute('color', new Float32BufferAttribute(edgeColors, 3));
-        mesh.add(baseEdges);
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `#include <begin_vertex>
+                vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                vWorldNormal = normalize(normalMatrix * normal);
+                vGridPosition = position.xz / 100.0;`
+            );
 
-        // Add coordinate markers
-        const halfSize = totalSize / 2;
-        const markerOffset = CoordinateMarkerParameters.HEIGHT_OFFSET;
-        
-        // Create marker group
-        this.markerGroup = new Object3D();
-        this.markerGroup.name = 'coordinateMarkers';
-        
-        // Pre-calculate marker positions and texts
-        const markers = [
-            { pos: [halfSize, 0, 0], text: `E\n(${Math.round(halfSize)},0)`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [-halfSize, 0, 0], text: `W\n(${-Math.round(halfSize)},0)`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [0, 0, halfSize], text: `S\n(0,${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [0, 0, -halfSize], text: `N\n(0,${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CARDINAL_COLOR },
-            { pos: [halfSize, 0, halfSize], text: `SE\n(${Math.round(halfSize)},${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [-halfSize, 0, halfSize], text: `SW\n(${-Math.round(halfSize)},${Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [halfSize, 0, -halfSize], text: `NE\n(${Math.round(halfSize)},${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR },
-            { pos: [-halfSize, 0, -halfSize], text: `NW\n(${-Math.round(halfSize)},${-Math.round(halfSize)})`, color: CoordinateMarkerParameters.CORNER_COLOR }
-        ];
+            // Add to fragment shader for panel effect and reflection
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+                uniform vec3 sunDirection;
+                uniform vec3 cameraDirection;
+                uniform vec4 reflectionParams;
+                uniform vec3 sunColor;
+                uniform float sunIntensity;
+                varying vec3 vWorldPosition;
+                varying vec3 vWorldNormal;
+                varying vec2 vGridPosition;
 
-        // Create markers in the marker group
-        markers.forEach(marker => {
-            const sprite = this.createCoordinateSprite(marker.text, marker.color);
-            const [x, y, z] = marker.pos;
-            sprite.position.set(x, markerOffset, z);
-            sprite.scale.set(300, 150, 1);
-            this.markerGroup!.add(sprite);
-        });
+                float getPanelFactor() {
+                    vec2 grid = floor(vGridPosition);
+                    vec2 frac = fract(vGridPosition);
+                    float border = step(0.1, max(frac.x, frac.y));
+                    float variation = fract(sin(dot(grid, vec2(12.9898, 78.233))) * 43758.5453);
+                    return mix(1.0, 0.7, border) * (0.9 + 0.1 * variation);
+                }
 
-        // Add marker group to mesh
-        mesh.add(this.markerGroup);
+                float calculateReflection() {
+                    vec3 normalizedNormal = normalize(vWorldNormal);
+                    vec3 normalizedCameraDir = normalize(cameraDirection);
+                    
+                    float sunDot = max(0.0, dot(normalizedNormal, sunDirection));
+                    float sunFactor = pow(sunDot, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
+                    
+                    vec3 reflectionDir = reflect(-sunDirection, normalizedNormal);
+                    float viewDot = max(0.0, dot(normalizedCameraDir, reflectionDir));
+                    float viewFactor = pow(viewDot, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
+                    
+                    float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
+                    float positionFactor = smoothstep(0.0, reflectionParams.z, 1.0 - distanceFromWest);
+                    
+                    float panelFactor = getPanelFactor();
+                    
+                    float heightFactor = 1.0 - abs(normalizedNormal.y);
+                    heightFactor = pow(heightFactor, ${ReflectionParameters.HEIGHT_FACTOR_POWER.toFixed(2)});
+                    
+                    float grazingDot = 1.0 - abs(dot(normalizedNormal, normalizedCameraDir));
+                    float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
+                    
+                    float totalFactor = pow(
+                        viewFactor * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(1)} +
+                        sunFactor * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(1)} +
+                        positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(1)} +
+                        panelFactor * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(1)} +
+                        grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(1)},
+                        reflectionParams.w
+                    );
+                    
+                    return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor * sunIntensity);
+                }`
+            );
 
-        return mesh;
+            // Modify material properties based on reflection
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                `#include <color_fragment>
+                float reflectionStrength = calculateReflection();
+                
+                vec3 reflectionColor = sunColor * reflectionStrength;
+                diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <roughnessmap_fragment>',
+                `#include <roughnessmap_fragment>
+                roughnessFactor = mix(reflectionParams.y, 0.1, reflectionStrength);`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <metalnessmap_fragment>',
+                `#include <metalnessmap_fragment>
+                metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);`
+            );
+
+            // Store modified shader for updates
+            (material as any).customShader = shader;
+        };
+
+        return material;
     }
 
     /**
@@ -591,6 +594,10 @@ export class TerrainGenerator {
     }
 
     public update(time: number): void {
+        if (this.shaderMaterial?.uniforms) {
+            // Update camera-dependent uniforms
+            this.shaderMaterial.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
+        }
         // Update any time-based animations or effects
         if (this.material && (this.material as any).customShader) {
             const shader = (this.material as any).customShader;
@@ -632,39 +639,5 @@ export class TerrainGenerator {
      */
     public areCoordinateMarkersVisible(): boolean {
         return this.markerGroup ? this.markerGroup.visible : false;
-    }
-
-    public dispose(): void {
-        if (this.terrainMesh) {
-            this.scene.remove(this.terrainMesh);
-            if (this.terrainMesh.geometry) {
-                this.terrainMesh.geometry.dispose();
-            }
-            if (this.terrainMesh.material) {
-                if (Array.isArray(this.terrainMesh.material)) {
-                    this.terrainMesh.material.forEach(material => material.dispose());
-                } else {
-                    this.terrainMesh.material.dispose();
-                }
-            }
-            // Clean up marker sprites
-            if (this.markerGroup) {
-                this.markerGroup.traverse((child) => {
-                    if (child instanceof Sprite) {
-                        const material = child.material as SpriteMaterial;
-                        if (material.map) {
-                            material.map.dispose();
-                        }
-                        material.dispose();
-                    }
-                });
-            }
-            this.terrainMesh = null;
-            this.markerGroup = null;
-        }
-        if (this.material) {
-            this.material.dispose();
-            this.material = null;
-        }
     }
 } 
