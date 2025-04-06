@@ -156,25 +156,25 @@ export const LightingParameters = {
 
 export const ReflectionParameters = {
     /** Base reflection settings */
-    REFLECTION_PARAMS: new Vector4(0.7, 0.2, 2.0, 0.6),
-    SUN_INTENSITY: 0.8,
+    REFLECTION_PARAMS: new Vector4(0.4, 0.6, 1.0, 0.4),
+    SUN_INTENSITY: 0.5,
     
     /** Factor weights */
-    VIEW_FACTOR_WEIGHT: 2.5,
-    SUN_FACTOR_WEIGHT: 2.0,
-    POSITION_FACTOR_WEIGHT: 0.8,
+    VIEW_FACTOR_WEIGHT: 1.5,
+    SUN_FACTOR_WEIGHT: 1.2,
+    POSITION_FACTOR_WEIGHT: 0.6,
     PANEL_FACTOR_WEIGHT: 0.2,
-    GRAZING_FACTOR_WEIGHT: 1.5,
+    GRAZING_FACTOR_WEIGHT: 1.0,
     
     /** Power settings */
-    SUN_FACTOR_POWER: 0.4,
-    VIEW_FACTOR_POWER: 0.8,
-    HEIGHT_FACTOR_POWER: 0.2,
-    GRAZING_FACTOR_POWER: 0.6,
+    SUN_FACTOR_POWER: 0.6,
+    VIEW_FACTOR_POWER: 1.0,
+    HEIGHT_FACTOR_POWER: 0.3,
+    GRAZING_FACTOR_POWER: 0.8,
     
     /** Thresholds */
-    MIN_REFLECTION: 0.2,
-    REFLECTION_BLEND: 2.0,
+    MIN_REFLECTION: 0.1,
+    REFLECTION_BLEND: 1.2,
     
     /** Position-based settings */
     WEST_FALLOFF_START: -2000,
