@@ -80,10 +80,14 @@ export class TerrainGenerator {
         };
 
         // Initialize reflection controls with lighting system
-        this.reflectionControls = new ReflectionControls((params, intensity) => {
+        this.reflectionControls = new ReflectionControls((params) => {
             if (this.shaderMaterial?.uniforms) {
                 this.shaderMaterial.uniforms.reflectionParams.value.copy(params);
-                this.shaderMaterial.uniforms.sunIntensity.value = intensity;
+                
+                // Mark the material as needing an update
+                if (this.material) {
+                    this.material.needsUpdate = true;
+                }
             }
         }, lightingSystem);
         
@@ -420,7 +424,6 @@ export class TerrainGenerator {
             shader.uniforms.gridSize = { value: gridSize };
             shader.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
             shader.uniforms.sunColor = { value: new Color(1.0, 0.98, 0.9) };
-            shader.uniforms.sunIntensity = { value: ReflectionParameters.SUN_INTENSITY };
 
             // Add varying for world-space values and grid position
             shader.vertexShader = shader.vertexShader.replace(
@@ -447,7 +450,6 @@ export class TerrainGenerator {
                 uniform vec3 cameraDirection;
                 uniform vec4 reflectionParams;
                 uniform vec3 sunColor;
-                uniform float sunIntensity;
                 varying vec3 vWorldPosition;
                 varying vec3 vWorldNormal;
                 varying vec2 vGridPosition;
@@ -491,7 +493,7 @@ export class TerrainGenerator {
                         reflectionParams.w
                     );
                     
-                    return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor * sunIntensity);
+                    return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor);
                 }`
             );
 
