@@ -4,16 +4,14 @@ import { LightingSystem } from '../terrain/LightingSystem';
 
 export class ReflectionControls {
     private container: HTMLDivElement;
-    private onUpdate: (params: Vector4, intensity: number) => void;
+    private onUpdate: (params: Vector4) => void;
     private currentParams: Vector4;
-    private currentIntensity: number;
     private lightingSystem: LightingSystem;
 
-    constructor(onUpdate: (params: Vector4, intensity: number) => void, lightingSystem: LightingSystem) {
+    constructor(onUpdate: (params: Vector4) => void, lightingSystem: LightingSystem) {
         this.onUpdate = onUpdate;
         this.lightingSystem = lightingSystem;
         this.currentParams = ReflectionParameters.REFLECTION_PARAMS.clone();
-        this.currentIntensity = Number(ReflectionParameters.SUN_INTENSITY);
 
         this.container = document.createElement('div');
         this.container.style.position = 'absolute';
@@ -100,32 +98,33 @@ export class ReflectionControls {
         // Metalness control
         this.createSlider('Metalness', 0, 1, this.currentParams.x, 0.01, (value) => {
             this.currentParams.x = value;
-            this.onUpdate(this.currentParams, this.currentIntensity);
+            this.onUpdate(this.currentParams);
         }, 'Controls how metallic the surface appears');
 
         // Roughness control
         this.createSlider('Roughness', 0, 1, this.currentParams.y, 0.01, (value) => {
             this.currentParams.y = value;
-            this.onUpdate(this.currentParams, this.currentIntensity);
+            this.onUpdate(this.currentParams);
         }, 'Controls how rough or smooth the surface appears');
 
         // Position factor control
         this.createSlider('Position Factor', 0, 5, this.currentParams.z, 0.1, (value) => {
             this.currentParams.z = value;
-            this.onUpdate(this.currentParams, this.currentIntensity);
+            this.onUpdate(this.currentParams);
         }, 'Controls how reflection strength varies with terrain position');
 
         // Reflection power control
         this.createSlider('Reflection Power', 0, 2, this.currentParams.w, 0.1, (value) => {
             this.currentParams.w = value;
-            this.onUpdate(this.currentParams, this.currentIntensity);
+            this.onUpdate(this.currentParams);
         }, 'Controls the overall intensity of reflections');
 
         // Sun intensity control
-        this.createSlider('Sun Intensity', 0, 2, this.currentIntensity, 0.05, (value) => {
-            this.currentIntensity = value;
-            this.onUpdate(this.currentParams, this.currentIntensity);
-        }, 'Controls the brightness of the sun\'s effect on reflections');
+        this.createSlider('Sun Intensity', 0.3, 2, LightingParameters.SUN_BASE_INTENSITY, 0.05, (value) => {
+            if (this.lightingSystem) {
+                this.lightingSystem.setSunIntensity(value);
+            }
+        }, 'Controls the brightness of the sun and its halo effect');
 
         // Add separator
         const separator = document.createElement('div');
@@ -139,7 +138,11 @@ export class ReflectionControls {
             Number(LightingParameters.SUN_MAX_HEIGHT), 
             0.5, 
             0.01, 
-            (value) => this.lightingSystem.setSunHeight(value),
+            (value) => {
+                if (this.lightingSystem) {
+                    this.lightingSystem.setSunHeight(value);
+                }
+            },
             'Controls the height of the sun in the sky'
         );
     }

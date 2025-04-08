@@ -21,6 +21,8 @@ export class LightingSystem {
     private currentSunHeight: number = 0.5;
     private targetSunHeight: number = 0.5;
     private lastUpdateTime: number = 0;
+    private currentSunIntensity: number = LightingParameters.SUN_BASE_INTENSITY;
+    private targetSunIntensity: number = LightingParameters.SUN_BASE_INTENSITY;
 
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
         if (LightingSystem.instance) {
@@ -236,7 +238,8 @@ export class LightingSystem {
         const haloMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 sunColor: { value: LightingParameters.SUN_HIGH_COLOR.clone() },
-                sunHeight: { value: 0.5 }
+                sunHeight: { value: 0.5 },
+                intensity: { value: LightingParameters.HALO_INTENSITY }
             },
             vertexShader: `
                 varying vec2 vUv;
@@ -248,6 +251,7 @@ export class LightingSystem {
             fragmentShader: `
                 uniform vec3 sunColor;
                 uniform float sunHeight;
+                uniform float intensity;
                 varying vec2 vUv;
                 
                 void main() {
@@ -256,7 +260,7 @@ export class LightingSystem {
                     
                     // Improved radial gradient for halo
                     float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-                    alpha = pow(alpha, 2.0) * ${LightingParameters.HALO_INTENSITY.toFixed(2)};  // Softer falloff
+                    alpha = pow(alpha, 2.0) * intensity;  // Softer falloff
                     
                     // Height-based color adjustment
                     float heightFactor = smoothstep(0.25, 0.7, sunHeight);
@@ -316,6 +320,9 @@ export class LightingSystem {
             return;
         }
         this.lastUpdateTime = now;
+
+        // Update sun intensity with interpolation
+        this.updateSunIntensity();
 
         // Smooth interpolation of sun height
         const smoothSpeed = 0.15;
@@ -500,6 +507,29 @@ export class LightingSystem {
 
     public getAmbientIntensity(): number {
         return this.ambientLight.intensity;
+    }
+
+    public setSunIntensity(intensity: number): void {
+        this.targetSunIntensity = intensity;
+    }
+
+    private updateSunIntensity(): void {
+        // Smooth interpolation of sun intensity
+        const smoothSpeed = 0.15;
+        this.currentSunIntensity += (this.targetSunIntensity - this.currentSunIntensity) * smoothSpeed;
+
+        // Update sun material opacity
+        const sunMaterial = this.lightSphere.material as THREE.ShaderMaterial;
+        sunMaterial.uniforms.opacity.value = LightingParameters.SUN_OPACITY * this.currentSunIntensity;
+        
+        // Update sun light intensity
+        this.sunLight.intensity = LightingParameters.SUN_BASE_INTENSITY * this.currentSunIntensity;
+        
+        // Update halo intensity
+        const frontHaloMaterial = this.frontHalo.material as THREE.ShaderMaterial;
+        const backHaloMaterial = this.backHalo.material as THREE.ShaderMaterial;
+        frontHaloMaterial.uniforms.intensity.value = LightingParameters.HALO_INTENSITY * this.currentSunIntensity;
+        backHaloMaterial.uniforms.intensity.value = LightingParameters.HALO_INTENSITY * this.currentSunIntensity;
     }
 
     public dispose(): void {
