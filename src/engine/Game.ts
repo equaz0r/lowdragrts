@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GridSystem } from './terrain/GridSystem';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
+import { PerformanceMonitor } from './debug/PerformanceMonitor';
 
 export class Game {
     private scene: THREE.Scene;
@@ -14,6 +15,7 @@ export class Game {
     private lightingSystem: LightingSystem | null = null;
     private clock: THREE.Clock = new THREE.Clock();
     private lastTime: number = 0;
+    private performanceMonitor: PerformanceMonitor;
 
     constructor() {
         // Initialize scene
@@ -36,6 +38,9 @@ export class Game {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.0;
         document.body.appendChild(this.renderer.domElement);
+
+        // Initialize performance monitor
+        this.performanceMonitor = PerformanceMonitor.getInstance(this.renderer);
 
         // Initialize controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -92,6 +97,9 @@ export class Game {
             this.controls.update();
         }
 
+        // Update performance monitor
+        this.performanceMonitor.update();
+
         this.renderer.render(this.scene, this.camera);
     }
 
@@ -104,5 +112,8 @@ export class Game {
         }
         this.renderer.dispose();
         document.body.removeChild(this.renderer.domElement);
+
+        // Dispose of performance monitor
+        this.performanceMonitor.dispose();
     }
 } 

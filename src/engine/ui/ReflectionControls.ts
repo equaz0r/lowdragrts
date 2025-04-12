@@ -15,24 +15,24 @@ export class ReflectionControls {
 
         this.container = document.createElement('div');
         this.container.style.position = 'absolute';
-        this.container.style.right = '20px';
-        this.container.style.top = '20px';
-        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.container.style.padding = '15px';
-        this.container.style.borderRadius = '5px';
+        this.container.style.right = '10px';
+        this.container.style.top = '10px';
+        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        this.container.style.padding = '4px';
+        this.container.style.borderRadius = '3px';
         this.container.style.color = 'white';
-        this.container.style.fontFamily = 'Arial';
+        this.container.style.fontFamily = 'monospace';
+        this.container.style.fontSize = '11px';
         this.container.style.zIndex = '1000';
-        this.container.style.minWidth = '250px';
+        this.container.style.minWidth = '180px';
 
-        // Add title
         const title = document.createElement('div');
         title.textContent = 'Terrain Controls';
-        title.style.fontSize = '16px';
+        title.style.fontSize = '11px';
         title.style.fontWeight = 'bold';
-        title.style.marginBottom = '15px';
-        title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.3)';
-        title.style.paddingBottom = '5px';
+        title.style.marginBottom = '4px';
+        title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
+        title.style.paddingBottom = '2px';
         this.container.appendChild(title);
 
         this.createControls();
@@ -49,12 +49,13 @@ export class ReflectionControls {
         tooltip?: string
     ): void {
         const container = document.createElement('div');
-        container.style.marginBottom = '10px';
+        container.style.marginBottom = '3px';
 
         const labelContainer = document.createElement('div');
         labelContainer.style.display = 'flex';
         labelContainer.style.alignItems = 'center';
-        labelContainer.style.marginBottom = '5px';
+        labelContainer.style.marginBottom = '1px';
+        labelContainer.style.fontSize = '11px';
 
         const labelElement = document.createElement('div');
         labelElement.textContent = label;
@@ -62,8 +63,9 @@ export class ReflectionControls {
         if (tooltip) {
             const tooltipIcon = document.createElement('span');
             tooltipIcon.textContent = ' ℹ';
-            tooltipIcon.style.marginLeft = '5px';
+            tooltipIcon.style.marginLeft = '3px';
             tooltipIcon.style.cursor = 'help';
+            tooltipIcon.style.opacity = '0.7';
             tooltipIcon.title = tooltip;
             labelElement.appendChild(tooltipIcon);
         }
@@ -71,17 +73,26 @@ export class ReflectionControls {
         labelContainer.appendChild(labelElement);
         container.appendChild(labelContainer);
 
+        const sliderContainer = document.createElement('div');
+        sliderContainer.style.display = 'flex';
+        sliderContainer.style.alignItems = 'center';
+        sliderContainer.style.gap = '4px';
+
         const slider = document.createElement('input');
         slider.type = 'range';
         slider.min = min.toString();
         slider.max = max.toString();
         slider.step = step.toString();
         slider.value = value.toString();
-        slider.style.width = '200px';
+        slider.style.width = '120px';
+        slider.style.height = '15px';
+        slider.style.accentColor = '#666';
+        slider.style.opacity = '0.8';
 
         const valueDisplay = document.createElement('span');
         valueDisplay.textContent = value.toFixed(2);
-        valueDisplay.style.marginLeft = '10px';
+        valueDisplay.style.minWidth = '35px';
+        valueDisplay.style.fontSize = '10px';
 
         slider.addEventListener('input', () => {
             const newValue = parseFloat(slider.value);
@@ -89,8 +100,9 @@ export class ReflectionControls {
             onChange(newValue);
         });
 
-        container.appendChild(slider);
-        container.appendChild(valueDisplay);
+        sliderContainer.appendChild(slider);
+        sliderContainer.appendChild(valueDisplay);
+        container.appendChild(sliderContainer);
         this.container.appendChild(container);
     }
 

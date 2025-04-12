@@ -49,12 +49,19 @@ export class TerrainGenerator {
     private terrainMesh: Mesh | null = null;
     private markerGroup: Object3D | null = null;
     private readonly noise: SimplexNoise;
-    private readonly bufferPool: {
-        vertex: Float32Array;
-        color: Float32Array;
-        uv: Float32Array;
-        index: Uint32Array;
-        height: Float32Array;
+    private bufferPool: {
+        vertex: Float32Array | null;
+        color: Float32Array | null;
+        uv: Float32Array | null;
+        index: Uint32Array | null;
+        height: Float32Array | null;
+    };
+    private bufferSizes: {
+        vertex: number;
+        color: number;
+        uv: number;
+        index: number;
+        height: number;
     };
     private shaderMaterial: WebGLProgramParametersWithUniforms | null = null;
     private geometry: BufferGeometry | null = null;
@@ -66,17 +73,22 @@ export class TerrainGenerator {
         this.camera = camera;
         this.noise = new SimplexNoise();
         
-        // Initialize buffer pool with maximum possible size
-        const divisions = this.gridSystem.getGridDivisions() * 2;
-        const vertexCount = (divisions + 1) * (divisions + 1);
-        const indexCount = divisions * divisions * 6;
-        
+        // Initialize buffer pool with null values
         this.bufferPool = {
-            vertex: new Float32Array(vertexCount * 3),
-            color: new Float32Array(vertexCount * 3),
-            uv: new Float32Array(vertexCount * 2),
-            index: new Uint32Array(indexCount),
-            height: new Float32Array(vertexCount)
+            vertex: null,
+            color: null,
+            uv: null,
+            index: null,
+            height: null
+        };
+
+        // Initialize buffer sizes
+        this.bufferSizes = {
+            vertex: 0,
+            color: 0,
+            uv: 0,
+            index: 0,
+            height: 0
         };
 
         // Initialize reflection controls with lighting system
@@ -92,6 +104,36 @@ export class TerrainGenerator {
         }, lightingSystem);
         
         this.initialize();
+    }
+
+    private ensureBufferSize(type: keyof typeof this.bufferPool, requiredSize: number): void {
+        if (!this.bufferPool[type] || this.bufferSizes[type] < requiredSize) {
+            // Release old buffer if it exists
+            if (this.bufferPool[type]) {
+                this.bufferPool[type] = null;
+            }
+
+            try {
+                // Allocate new buffer with required size
+                switch (type) {
+                    case 'vertex':
+                    case 'color':
+                    case 'height':
+                        this.bufferPool[type] = new Float32Array(requiredSize);
+                        break;
+                    case 'uv':
+                        this.bufferPool[type] = new Float32Array(requiredSize);
+                        break;
+                    case 'index':
+                        this.bufferPool[type] = new Uint32Array(requiredSize);
+                        break;
+                }
+                this.bufferSizes[type] = requiredSize;
+            } catch (error: any) {
+                console.error(`Failed to allocate buffer of type ${type} with size ${requiredSize}:`, error);
+                throw new Error(`Buffer allocation failed: ${error.message}`);
+            }
+        }
     }
 
     private disposeGeometry(): void {
@@ -113,7 +155,11 @@ export class TerrainGenerator {
         }
         // Clear buffer pool references
         Object.keys(this.bufferPool).forEach(key => {
-            (this.bufferPool as any)[key] = null;
+            this.bufferPool[key as keyof typeof this.bufferPool] = null;
+        });
+        // Reset buffer sizes
+        Object.keys(this.bufferSizes).forEach(key => {
+            this.bufferSizes[key as keyof typeof this.bufferSizes] = 0;
         });
         // Dispose reflection controls
         this.reflectionControls.dispose();
@@ -125,6 +171,17 @@ export class TerrainGenerator {
         const totalSize = this.gridSystem.getTotalSize();
         const divisions = this.gridSystem.getGridDivisions() * 2;
         const segmentSize = totalSize / divisions;
+
+        // Calculate required buffer sizes
+        const vertexCount = (divisions + 1) * (divisions + 1);
+        const indexCount = divisions * divisions * 6;
+
+        // Ensure buffers are properly sized
+        this.ensureBufferSize('vertex', vertexCount * 3);
+        this.ensureBufferSize('color', vertexCount * 3);
+        this.ensureBufferSize('uv', vertexCount * 2);
+        this.ensureBufferSize('index', indexCount);
+        this.ensureBufferSize('height', vertexCount);
 
         let minHeight = Infinity;
         let maxHeight = -Infinity;
@@ -141,7 +198,9 @@ export class TerrainGenerator {
                 const rawHeight = baseHeight * 0.3 + peakHeight * 0.7;
                 const height = this.angularizeHeight(rawHeight) * TerrainParameters.HEIGHT_SCALE;
                 
-                this.bufferPool.height[index] = height;
+                if (this.bufferPool.height) {
+                    this.bufferPool.height[index] = height;
+                }
                 minHeight = Math.min(minHeight, height);
                 maxHeight = Math.max(maxHeight, height);
             }
@@ -159,14 +218,16 @@ export class TerrainGenerator {
                 const index = x + z * (divisions + 1);
                 const xPos = (x - divisions / 2) * segmentSize;
                 const zPos = (z - divisions / 2) * segmentSize;
-                const height = this.bufferPool.height[index];
+                const height = this.bufferPool.height ? this.bufferPool.height[index] : 0;
                 
                 const normalizedHeight = Math.pow((height - minHeight) / heightRange, 1.2);
                 
                 // Set vertex position
-                this.bufferPool.vertex[vertexIdx++] = xPos;
-                this.bufferPool.vertex[vertexIdx++] = height;
-                this.bufferPool.vertex[vertexIdx++] = zPos;
+                if (this.bufferPool.vertex) {
+                    this.bufferPool.vertex[vertexIdx++] = xPos;
+                    this.bufferPool.vertex[vertexIdx++] = height;
+                    this.bufferPool.vertex[vertexIdx++] = zPos;
+                }
                 
                 // Set vertex color (darker base color for better contrast)
                 const color = new Color();
@@ -174,39 +235,53 @@ export class TerrainGenerator {
                     .multiplyScalar(0.3) // Darken the base color
                     .lerp(TerrainParameters.PEAK_COLOR, normalizedHeight);
                 
-                this.bufferPool.color[colorIdx++] = color.r;
-                this.bufferPool.color[colorIdx++] = color.g;
-                this.bufferPool.color[colorIdx++] = color.b;
+                if (this.bufferPool.color) {
+                    this.bufferPool.color[colorIdx++] = color.r;
+                    this.bufferPool.color[colorIdx++] = color.g;
+                    this.bufferPool.color[colorIdx++] = color.b;
+                }
                 
                 // Set UV coordinates
-                this.bufferPool.uv[uvIdx++] = x / divisions;
-                this.bufferPool.uv[uvIdx++] = z / divisions;
+                if (this.bufferPool.uv) {
+                    this.bufferPool.uv[uvIdx++] = x / divisions;
+                    this.bufferPool.uv[uvIdx++] = z / divisions;
+                }
             }
         }
 
         // Generate indices
         let indexIdx = 0;
-        for (let z = 0; z < divisions; z++) {
-            for (let x = 0; x < divisions; x++) {
-                const a = x + (divisions + 1) * z;
-                const b = x + (divisions + 1) * (z + 1);
-                const c = (x + 1) + (divisions + 1) * z;
-                const d = (x + 1) + (divisions + 1) * (z + 1);
+        if (this.bufferPool.index) {
+            for (let z = 0; z < divisions; z++) {
+                for (let x = 0; x < divisions; x++) {
+                    const a = x + (divisions + 1) * z;
+                    const b = x + (divisions + 1) * (z + 1);
+                    const c = (x + 1) + (divisions + 1) * z;
+                    const d = (x + 1) + (divisions + 1) * (z + 1);
 
-                this.bufferPool.index[indexIdx++] = a;
-                this.bufferPool.index[indexIdx++] = b;
-                this.bufferPool.index[indexIdx++] = c;
-                this.bufferPool.index[indexIdx++] = c;
-                this.bufferPool.index[indexIdx++] = b;
-                this.bufferPool.index[indexIdx++] = d;
+                    this.bufferPool.index[indexIdx++] = a;
+                    this.bufferPool.index[indexIdx++] = b;
+                    this.bufferPool.index[indexIdx++] = c;
+                    this.bufferPool.index[indexIdx++] = c;
+                    this.bufferPool.index[indexIdx++] = b;
+                    this.bufferPool.index[indexIdx++] = d;
+                }
             }
         }
 
         // Set geometry attributes using buffer pool
-        this.geometry.setAttribute('position', new Float32BufferAttribute(this.bufferPool.vertex, 3));
-        this.geometry.setAttribute('color', new Float32BufferAttribute(this.bufferPool.color, 3));
-        this.geometry.setAttribute('uv', new Float32BufferAttribute(this.bufferPool.uv, 2));
-        this.geometry.setIndex(new BufferAttribute(this.bufferPool.index, 1));
+        if (this.bufferPool.vertex) {
+            this.geometry.setAttribute('position', new Float32BufferAttribute(this.bufferPool.vertex, 3));
+        }
+        if (this.bufferPool.color) {
+            this.geometry.setAttribute('color', new Float32BufferAttribute(this.bufferPool.color, 3));
+        }
+        if (this.bufferPool.uv) {
+            this.geometry.setAttribute('uv', new Float32BufferAttribute(this.bufferPool.uv, 2));
+        }
+        if (this.bufferPool.index) {
+            this.geometry.setIndex(new BufferAttribute(this.bufferPool.index, 1));
+        }
         this.geometry.computeVertexNormals();
 
         // Create main terrain mesh with material
