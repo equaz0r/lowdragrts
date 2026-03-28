@@ -26,24 +26,24 @@ export const GridParameters = {
 
 export const TerrainParameters = {
     /** Base terrain generation parameters */
-    HEIGHT_SCALE: 800,
+    HEIGHT_SCALE: 1400,
     NOISE_SCALE: 0.001,
     NOISE_OCTAVES: 8,
-    PERSISTENCE: 0.65,
+    PERSISTENCE: 0.5,
     LACUNARITY: 1.6,
-    
+
     /** Base terrain noise settings */
-    BASE_NOISE_FREQUENCY: 0.3,
+    BASE_NOISE_FREQUENCY: 0.15,
     BASE_NOISE_OCTAVES: 6,
     BASE_AMPLITUDE_FALLOFF: 0.7,
     BASE_FREQUENCY_INCREASE: 1.6,
     BASE_NOISE_WEIGHTS: [0.4, 0.4, 0.2],
-    
+
     /** Peak generation settings */
     PEAK_NOISE_FREQUENCY_MULTIPLIER: 1.2,
     PEAK_NOISE_WEIGHTS: [0.2, 0.2, 0.3, 0.3],
-    PEAK_LOW_THRESHOLD: 0.25,
-    PEAK_HIGH_THRESHOLD: 0.6,
+    PEAK_LOW_THRESHOLD: 0.05,
+    PEAK_HIGH_THRESHOLD: 0.75,
     
     /** Peak noise configurations for UI control */
     PEAK_NOISE_CONFIGS: [
@@ -54,9 +54,9 @@ export const TerrainParameters = {
     ],
     
     /** Angular terrain settings */
-    ANGULAR_STEPS: 20,
-    MIN_ANGULAR_BLEND: 0.3,
-    MAX_ANGULAR_BLEND: 0.5,
+    ANGULAR_STEPS: 6,
+    MIN_ANGULAR_BLEND: 0.05,
+    MAX_ANGULAR_BLEND: 0.15,
     
     /** Angular terrain height-based settings */
     ANGULAR_HEIGHT_FACTOR_POWER: 1.0,  // Controls how height affects angularity

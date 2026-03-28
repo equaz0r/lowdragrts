@@ -42,14 +42,32 @@ interface WebGLProgramParametersWithUniforms {
     fragmentShader: string;
 }
 
+export interface TerrainConfig {
+    heightScale: number;
+    persistence: number;
+    basePeakBlend: number;
+    valleyEnabled: boolean;
+    valleyWidth: number;   // fraction of total map width (0.05 – 0.5)
+    valleyDepth: number;   // 0 = no effect, 1 = flat floor
+}
+
 export class TerrainGenerator {
+    public config: TerrainConfig = {
+        heightScale: TerrainParameters.HEIGHT_SCALE,
+        persistence: TerrainParameters.PERSISTENCE,
+        basePeakBlend: 0.6,
+        valleyEnabled: true,
+        valleyWidth: 0.18,
+        valleyDepth: 0.72,
+    };
+
     private readonly gridSystem: GridSystem;
     private readonly camera: PerspectiveCamera;
     private readonly scene: Scene;
     private material: Material | null = null;
     private terrainMesh: Mesh | null = null;
     private markerGroup: Object3D | null = null;
-    private readonly noise: SimplexNoise;
+    private noise: SimplexNoise;
     private bufferPool: BufferPool;
     private currentBuffers: {
         vertex: Float32Array | null;
@@ -111,6 +129,32 @@ export class TerrainGenerator {
         }
     }
 
+    public async regenerate(): Promise<void> {
+        console.log('[TerrainGenerator] regenerate() called. terrainMesh=', this.terrainMesh, 'config=', JSON.stringify(this.config));
+        if (this.terrainMesh) {
+            this.scene.remove(this.terrainMesh);
+            this.terrainMesh = null;
+            console.log('[TerrainGenerator] Old mesh removed from scene.');
+        } else {
+            console.log('[TerrainGenerator] No existing terrainMesh to remove.');
+        }
+        // New noise instance gives different terrain topology each regeneration
+        this.noise = new SimplexNoise();
+        console.log('[TerrainGenerator] New SimplexNoise created. Starting generate()...');
+        try {
+            this.terrainMesh = await this.generate();
+            console.log('[TerrainGenerator] generate() returned mesh:', this.terrainMesh);
+            this.scene.add(this.terrainMesh);
+            console.log('[TerrainGenerator] New mesh added to scene.');
+            if (this.terrainMesh.material instanceof Material) {
+                this.material = this.terrainMesh.material;
+            }
+        } catch (error) {
+            console.error('[TerrainGenerator] generate() threw:', error);
+        }
+        console.log('[TerrainGenerator] regenerate() done.');
+    }
+
     public dispose(): void {
         this.disposeGeometry();
         if (this.material) {
@@ -165,8 +209,16 @@ export class TerrainGenerator {
                 
                 const baseHeight = this.generateBaseHeight(this.noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
                 const peakHeight = this.generatePeakHeight(this.noise, xPos, zPos);
-                const rawHeight = baseHeight * 0.3 + peakHeight * 0.7;
-                const height = this.angularizeHeight(rawHeight) * TerrainParameters.HEIGHT_SCALE;
+                const blend = this.config.basePeakBlend;
+                const rawHeight = baseHeight * blend + peakHeight * (1 - blend);
+                let height = this.angularizeHeight(rawHeight) * this.config.heightScale;
+
+                // Valley carving — Gaussian mask along X axis (valley runs through centre in Z direction)
+                if (this.config.valleyEnabled) {
+                    const sigma = this.config.valleyWidth * totalSize * 0.5;
+                    const valleyMask = Math.exp(-(xPos * xPos) / (2 * sigma * sigma));
+                    height = height * (1.0 - this.config.valleyDepth * valleyMask);
+                }
                 
                 if (this.currentBuffers.height) {
                     this.currentBuffers.height[index] = height;
@@ -605,7 +657,7 @@ export class TerrainGenerator {
             TerrainParameters.NOISE_OCTAVES,
             TerrainParameters.PEAK_NOISE_CONFIGS,
             TerrainParameters.PEAK_NOISE_WEIGHTS,
-            TerrainParameters.PERSISTENCE,
+            this.config.persistence,
             TerrainParameters.LACUNARITY
         );
 
@@ -690,23 +742,14 @@ export class TerrainGenerator {
 
     private disposeGeometry(): void {
         if (this.geometry) {
-            // Release all buffers back to the pool before disposing
-            if (this.currentBuffers.vertex) {
-                this.bufferPool.releaseBuffer(this.currentBuffers.vertex);
-            }
-            if (this.currentBuffers.color) {
-                this.bufferPool.releaseBuffer(this.currentBuffers.color);
-            }
-            if (this.currentBuffers.uv) {
-                this.bufferPool.releaseBuffer(this.currentBuffers.uv);
-            }
-            if (this.currentBuffers.index) {
-                this.bufferPool.releaseBuffer(this.currentBuffers.index);
-            }
-            if (this.currentBuffers.height) {
-                this.bufferPool.releaseBuffer(this.currentBuffers.height);
-            }
-            
+            // Release all buffers back to the pool and null the references
+            (Object.keys(this.currentBuffers) as Array<keyof typeof this.currentBuffers>).forEach(key => {
+                if (this.currentBuffers[key]) {
+                    this.bufferPool.releaseBuffer(this.currentBuffers[key]!);
+                    this.currentBuffers[key] = null;
+                }
+            });
+
             this.geometry.dispose();
             this.geometry = null;
         }

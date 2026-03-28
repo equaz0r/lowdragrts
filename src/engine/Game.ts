@@ -4,6 +4,7 @@ import { GridSystem } from './terrain/GridSystem';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
 import { PerformanceMonitor } from './debug/PerformanceMonitor';
+import { TerrainControls } from './ui/TerrainControls';
 
 export class Game {
     private scene: THREE.Scene;
@@ -12,6 +13,7 @@ export class Game {
     private controls: OrbitControls | null = null;
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
+    private terrainControls: TerrainControls | null = null;
     private lightingSystem: LightingSystem | null = null;
     private clock: THREE.Clock = new THREE.Clock();
     private lastTime: number = 0;
@@ -57,6 +59,7 @@ export class Game {
         // Then initialize grid and terrain
         this.gridSystem = new GridSystem(this.scene, this.camera);
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem, this.camera, this.lightingSystem);
+        this.terrainControls = new TerrainControls(this.terrainGenerator);
 
         // Set initial sun height
         if (this.lightingSystem) {
@@ -104,6 +107,9 @@ export class Game {
     }
 
     public dispose(): void {
+        if (this.terrainControls) {
+            this.terrainControls.dispose();
+        }
         if (this.terrainGenerator) {
             this.terrainGenerator.dispose();
         }

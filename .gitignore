@@ -23,3 +23,9 @@ Thumbs.db
 
 # Archived files
 src/archive/
+
+# Build artifacts
+public/bundle.js
+
+# Claude Code
+.claude/
