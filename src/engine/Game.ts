@@ -18,6 +18,8 @@ export class Game {
     private clock: THREE.Clock = new THREE.Clock();
     private lastTime: number = 0;
     private performanceMonitor: PerformanceMonitor;
+    private disposed: boolean = false;
+    private resizeHandler: (() => void) | null = null;
 
     constructor() {
         // Initialize scene
@@ -79,14 +81,16 @@ export class Game {
     }
 
     private setupEventListeners(): void {
-        window.addEventListener('resize', () => {
+        this.resizeHandler = () => {
             this.camera.aspect = window.innerWidth / window.innerHeight;
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        };
+        window.addEventListener('resize', this.resizeHandler);
     }
 
     private animate(): void {
+        if (this.disposed) return;
         requestAnimationFrame(() => this.animate());
 
         const time = performance.now() * 0.001; // Convert to seconds
@@ -115,6 +119,11 @@ export class Game {
     }
 
     public dispose(): void {
+        this.disposed = true;
+        if (this.resizeHandler) {
+            window.removeEventListener('resize', this.resizeHandler);
+            this.resizeHandler = null;
+        }
         if (this.terrainControls) {
             this.terrainControls.dispose();
         }

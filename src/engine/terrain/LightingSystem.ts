@@ -26,8 +26,7 @@ export class LightingSystem {
 
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
         if (LightingSystem.instance) {
-            console.warn('[LightingSystem] Instance already exists, returning existing instance');
-            return LightingSystem.instance;
+            throw new Error('[LightingSystem] Instance already exists — use LightingSystem.getInstance()');
         }
 
         console.log('[LightingSystem] Creating new instance');
@@ -569,5 +568,6 @@ export class LightingSystem {
         this.scene.remove(this.ambientLight);
         this.sunLight.dispose();
         this.ambientLight.dispose();
+        LightingSystem.instance = null;
     }
 } 
