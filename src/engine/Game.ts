@@ -5,6 +5,7 @@ import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { LightingSystem } from './terrain/LightingSystem';
 import { PerformanceMonitor } from './debug/PerformanceMonitor';
 import { TerrainControls } from './ui/TerrainControls';
+import { EdgeControls } from './ui/EdgeControls';
 
 export class Game {
     private scene: THREE.Scene;
@@ -14,6 +15,7 @@ export class Game {
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
     private terrainControls: TerrainControls | null = null;
+    private edgeControls: EdgeControls | null = null;
     private lightingSystem: LightingSystem | null = null;
     private clock: THREE.Clock = new THREE.Clock();
     private lastTime: number = 0;
@@ -27,7 +29,7 @@ export class Game {
         
         // Setup camera with adjusted parameters for better sun visibility
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
-        this.camera.position.set(200, 200, 200);
+        this.camera.position.set(4000, 3000, 4000);
         this.camera.lookAt(0, 0, 0);
         this.camera.far = 500000;
         this.camera.updateProjectionMatrix();
@@ -50,8 +52,8 @@ export class Game {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        this.controls.maxDistance = 2000;
-        this.controls.minDistance = 50;
+        this.controls.maxDistance = 16000;
+        this.controls.minDistance = 100;
         this.controls.maxPolarAngle = Math.PI * 0.65;
         this.controls.minPolarAngle = 0.1;
 
@@ -62,14 +64,14 @@ export class Game {
         this.gridSystem = new GridSystem(this.scene, this.camera);
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem, this.camera, this.lightingSystem);
         this.terrainControls = new TerrainControls(this.terrainGenerator, () => {
-            // Reset camera to default overview on new terrain generation
-            this.camera.position.set(200, 200, 200);
+            this.camera.position.set(4000, 3000, 4000);
             this.camera.lookAt(0, 0, 0);
             if (this.controls) {
                 this.controls.target.set(0, 0, 0);
                 this.controls.update();
             }
         });
+        this.edgeControls = new EdgeControls(this.terrainGenerator);
 
         // Set initial sun height
         if (this.lightingSystem) {
@@ -126,6 +128,9 @@ export class Game {
         }
         if (this.terrainControls) {
             this.terrainControls.dispose();
+        }
+        if (this.edgeControls) {
+            this.edgeControls.dispose();
         }
         if (this.terrainGenerator) {
             this.terrainGenerator.dispose();

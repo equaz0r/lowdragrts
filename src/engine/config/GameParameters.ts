@@ -7,7 +7,7 @@ import { Color, Vector3, Vector4 } from 'three';
 
 export const GridParameters = {
     /** Base size of the grid in world units */
-    TOTAL_SIZE: 4000,
+    TOTAL_SIZE: 8000,
     
     /** Number of grid divisions (lines) */
     DIVISIONS: 100,
@@ -27,32 +27,8 @@ export const GridParameters = {
 export const TerrainParameters = {
     /** Base terrain generation parameters */
     HEIGHT_SCALE: 1400,
-    NOISE_SCALE: 0.001,
-    NOISE_OCTAVES: 8,
     PERSISTENCE: 0.5,
-    LACUNARITY: 1.6,
 
-    /** Base terrain noise settings */
-    BASE_NOISE_FREQUENCY: 0.15,
-    BASE_NOISE_OCTAVES: 6,
-    BASE_AMPLITUDE_FALLOFF: 0.7,
-    BASE_FREQUENCY_INCREASE: 1.6,
-    BASE_NOISE_WEIGHTS: [0.4, 0.4, 0.2],
-
-    /** Peak generation settings */
-    PEAK_NOISE_FREQUENCY_MULTIPLIER: 1.2,
-    PEAK_NOISE_WEIGHTS: [0.2, 0.2, 0.3, 0.3],
-    PEAK_LOW_THRESHOLD: 0.05,
-    PEAK_HIGH_THRESHOLD: 0.75,
-    
-    /** Peak noise configurations for UI control */
-    PEAK_NOISE_CONFIGS: [
-        { frequencyMultiplier: 1.0, offset: 1000, useAbsolute: false },
-        { frequencyMultiplier: 0.8, offset: 0, useAbsolute: true },
-        { frequencyMultiplier: 0.4, offset: 2000, useAbsolute: false },
-        { frequencyMultiplier: 0.2, offset: 3000, useAbsolute: true }
-    ],
-    
     /** Angular terrain settings */
     ANGULAR_STEPS: 6,
     MIN_ANGULAR_BLEND: 0.05,
@@ -62,24 +38,14 @@ export const TerrainParameters = {
     ANGULAR_HEIGHT_FACTOR_POWER: 1.0,  // Controls how height affects angularity
     ANGULAR_BLEND_CURVE: 0.5,          // Controls the curve of the blend transition
     
-    /** Edge parameters */
-    LOW_HEIGHT_THRESHOLD: 0.15,
-    TRANSITION_THRESHOLD: 0.2,
-    ALIGNED_EDGE_INTENSITY: 1.0,
-    NON_ALIGNED_EDGE_INTENSITY: 0.15,
-    HEIGHT_INTENSITY_MIN: 0.4,
-    HEIGHT_INTENSITY_MAX: 1.6,
-    
     /** Panel parameters */
     PANEL_BORDER_WIDTH: 0.95,
     PANEL_VARIATION: 0.1,
-    
+
     /** Colors */
     BASE_COLOR: new Color(0x000033),
     PEAK_COLOR: new Color(0x3366ff),
-    LOW_EDGE_COLOR: new Color(0xff6600),
-    HIGH_EDGE_COLOR: new Color(0x00ff00),
-    EDGE_OPACITY: 0.6,
+    EDGE_OPACITY: 1.0,
     
     /** Material properties */
     MATERIAL_METALNESS: 0.6,
@@ -177,13 +143,36 @@ export const ReflectionParameters = {
     REFLECTION_BLEND: 1.2,
     
     /** Position-based settings */
-    WEST_FALLOFF_START: -2000,
-    WEST_FALLOFF_LENGTH: 4000
+    WEST_FALLOFF_START: -4000,
+    WEST_FALLOFF_LENGTH: 8000
 } as const;
 
 export const CameraParameters = {
     /** Initial camera settings */
-    INITIAL_POSITION: new Vector3(2000, 1500, 2000),
+    INITIAL_POSITION: new Vector3(4000, 3000, 4000),
     FAR_CLIP_PLANE: 100000,
     FIELD_OF_VIEW: 75
-} as const; 
+} as const;
+
+export interface EdgeColorLayer {
+    heightFraction: number; // 0–1 normalised terrain height where this layer starts
+    color: Color;
+    intensity: number;      // brightness multiplier (0 = black/off, 3+ = neon glow)
+}
+
+/**
+ * Live edge appearance config — mutated directly by EdgeControls.
+ * NOT as const so controls can modify it at runtime.
+ */
+export const EdgeParameters = {
+    layers: [
+        { heightFraction: 0.00, color: new Color(0x000000), intensity: 0.00 },
+        { heightFraction: 0.18, color: new Color(0x3a0400), intensity: 0.35 },
+        { heightFraction: 0.38, color: new Color(0xff4400), intensity: 0.90 },
+        { heightFraction: 0.62, color: new Color(0x00ff44), intensity: 1.40 },
+        { heightFraction: 0.82, color: new Color(0x44ffff), intensity: 3.00 },
+    ] as EdgeColorLayer[],
+    pulseSpeed:     0.22,   // cycles per second
+    pulseIntensity: 5.0,    // brightness multiplier of pulse head
+    pulseWidth:     0.06,   // fraction of height range covered by one pulse tail
+}; 

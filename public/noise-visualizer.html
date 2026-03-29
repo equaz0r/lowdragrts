@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LowDrag RTS — Noise Visualiser</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #111; color: #ccc; font-family: monospace; font-size: 11px; margin: 0; padding: 12px; }
+  h1 { color: #fff; font-size: 13px; margin: 0 0 8px; }
+  .layout { display: flex; gap: 16px; align-items: flex-start; }
+  .sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+  .panels { display: flex; flex-wrap: wrap; gap: 10px; flex: 1; }
+  .panel { display: flex; flex-direction: column; gap: 3px; }
+  .panel label { color: #aaa; font-size: 10px; }
+  canvas { border: 1px solid #333; display: block; }
+  .section { color: #888; font-size: 10px; border-bottom: 1px solid #2a2a2a; padding-bottom: 3px; margin-bottom: 4px; font-weight: bold; }
+  .ctrl-group { background: rgba(255,255,255,0.04); border-radius: 3px; padding: 6px 8px; }
+  .ctrl-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .ctrl-row label { flex: 1; color: #999; font-size: 10px; cursor: default; }
+  .ctrl-row label span { opacity: 0.5; font-size: 9px; }
+  input[type=range] { width: 90px; accent-color: #4488ff; flex-shrink: 0; }
+  .val { min-width: 38px; color: #fff; font-size: 10px; text-align: right; }
+  .btn-row { display: flex; gap: 6px; }
+  button { background: rgba(60,100,180,0.6); color: #ddd; border: 1px solid rgba(100,150,255,0.3); border-radius: 3px; font-family: monospace; font-size: 10px; padding: 4px 10px; cursor: pointer; flex: 1; }
+  button:hover { background: rgba(80,120,200,0.8); color: #fff; }
+  .seed-row { display: flex; align-items: center; gap: 6px; }
+  .seed-val { color: #666; font-size: 9px; flex: 1; word-break: break-all; }
+  .desc { color: #555; font-size: 9px; line-height: 1.4; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>LowDrag RTS — Noise Visualiser · mirrors NoiseSampler.ts exactly</h1>
+<div class="layout">
+
+<!-- ── Sidebar controls ─────────────────────────────────────── -->
+<div class="sidebar">
+
+  <div class="ctrl-group">
+    <div class="section">Seed</div>
+    <div class="seed-row">
+      <button onclick="newSeed()">New Seed</button>
+      <span class="seed-val" id="seed-display">—</span>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="section">Shape</div>
+    <div class="ctrl-row">
+      <label>Base/Peak Blend <span title="1=all hills, 0=all ridges">ℹ</span></label>
+      <input type="range" id="blend" min="0" max="1" step="0.01" value="0.6">
+      <span class="val" id="blend-v">0.60</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Persistence <span title="Fractal gain — roughness">ℹ</span></label>
+      <input type="range" id="persistence" min="0.2" max="0.8" step="0.01" value="0.5">
+      <span class="val" id="persistence-v">0.50</span>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="section">Noise Frequency</div>
+    <div class="ctrl-row">
+      <label>Base Scale <span title="Lower = bigger rolling features">ℹ</span></label>
+      <input type="range" id="baseFreq" min="0.0001" max="0.002" step="0.0001" value="0.0004">
+      <span class="val" id="baseFreq-v">4e-4</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Peak Scale <span title="Lower = wider ridges">ℹ</span></label>
+      <input type="range" id="peakFreq" min="0.0002" max="0.003" step="0.0001" value="0.0008">
+      <span class="val" id="peakFreq-v">8e-4</span>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="section">Domain Warp</div>
+    <div class="ctrl-row">
+      <label>Warp Strength <span title="0 = off, higher = more twisted">ℹ</span></label>
+      <input type="range" id="warpAmp" min="0" max="800" step="10" value="350">
+      <span class="val" id="warpAmp-v">350</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Warp Scale <span title="Frequency of warp pattern">ℹ</span></label>
+      <input type="range" id="warpFreq" min="0.00005" max="0.0006" step="0.00005" value="0.0002">
+      <span class="val" id="warpFreq-v">2e-4</span>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="section">Peak Shape</div>
+    <div class="ctrl-row">
+      <label>Peak Threshold <span title="Higher = fewer/sparser peaks">ℹ</span></label>
+      <input type="range" id="peakThresh" min="0.1" max="0.75" step="0.01" value="0.4">
+      <span class="val" id="peakThresh-v">0.40</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Base Octaves</label>
+      <input type="range" id="baseOct" min="2" max="8" step="1" value="5">
+      <span class="val" id="baseOct-v">5</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Peak Octaves</label>
+      <input type="range" id="peakOct" min="2" max="8" step="1" value="6">
+      <span class="val" id="peakOct-v">6</span>
+    </div>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="section">Valley</div>
+    <div class="ctrl-row">
+      <label>Valley Depth</label>
+      <input type="range" id="valleyDepth" min="0" max="1" step="0.01" value="0.72">
+      <span class="val" id="valleyDepth-v">0.72</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Valley Width</label>
+      <input type="range" id="valleyWidth" min="0.05" max="0.5" step="0.01" value="0.18">
+      <span class="val" id="valleyWidth-v">0.18</span>
+    </div>
+  </div>
+
+  <p class="desc">
+    Each panel is a 256×256 greyscale heightmap representing a 4000×4000 world.<br>
+    White = high, black = low.<br>
+    <strong>Combined</strong> matches what TerrainGenerator.ts will produce for these settings.
+  </p>
+</div>
+
+<!-- ── Canvas panels ────────────────────────────────────────── -->
+<div class="panels" id="panels"></div>
+</div>
+
+<script type="module">
+import FastNoiseLite from './FastNoiseLite.js';
+
+// ── Constants ─────────────────────────────────────────────────
+const SIZE  = 256;
+const WORLD = 4000;
+
+// ── State ─────────────────────────────────────────────────────
+let seed = Math.random() * 2147483647 | 0;
+window.newSeed = () => { seed = Math.random() * 2147483647 | 0; render(); };
+
+// ── Helpers ───────────────────────────────────────────────────
+function getCfg() {
+  return {
+    blend:       +document.getElementById('blend').value,
+    persistence: +document.getElementById('persistence').value,
+    baseFreq:    +document.getElementById('baseFreq').value,
+    peakFreq:    +document.getElementById('peakFreq').value,
+    warpAmp:     +document.getElementById('warpAmp').value,
+    warpFreq:    +document.getElementById('warpFreq').value,
+    peakThresh:  +document.getElementById('peakThresh').value,
+    baseOct:     +document.getElementById('baseOct').value | 0,
+    peakOct:     +document.getElementById('peakOct').value | 0,
+    valleyDepth: +document.getElementById('valleyDepth').value,
+    valleyWidth: +document.getElementById('valleyWidth').value,
+  };
+}
+
+function fmtFreq(v) {
+  if (v < 0.001) return (v * 10000).toFixed(0) + 'e-4';
+  return v.toFixed(4);
+}
+
+// ── NoiseSampler — mirrors NoiseSampler.ts exactly ────────────
+function makeSampler(seed, cfg) {
+  const baseFbm    = new FastNoiseLite(seed);
+  baseFbm.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
+  baseFbm.SetFractalType(FastNoiseLite.FractalType.FBm);
+  baseFbm.SetFractalOctaves(cfg.baseOct);
+  baseFbm.SetFractalLacunarity(2.0);
+  baseFbm.SetFractalGain(cfg.persistence);
+  baseFbm.SetFrequency(cfg.baseFreq);
+
+  const peakRidged = new FastNoiseLite(seed + 31337);
+  peakRidged.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
+  peakRidged.SetFractalType(FastNoiseLite.FractalType.Ridged);
+  peakRidged.SetFractalOctaves(cfg.peakOct);
+  peakRidged.SetFractalLacunarity(2.0);
+  peakRidged.SetFractalGain(cfg.persistence);
+  peakRidged.SetFrequency(cfg.peakFreq);
+
+  const warpX = new FastNoiseLite(seed + 7919);
+  warpX.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+  warpX.SetFractalType(FastNoiseLite.FractalType.FBm);
+  warpX.SetFractalOctaves(3);
+  warpX.SetFractalGain(0.5);
+  warpX.SetFrequency(cfg.warpFreq);
+
+  const warpZ = new FastNoiseLite(seed + 104723);
+  warpZ.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+  warpZ.SetFractalType(FastNoiseLite.FractalType.FBm);
+  warpZ.SetFractalOctaves(3);
+  warpZ.SetFractalGain(0.5);
+  warpZ.SetFrequency(cfg.warpFreq);
+
+  const warpAmp     = cfg.warpAmp;
+  const peakWarpAmp = cfg.warpAmp * 0.5;
+
+  function warpCoords(x, z, amp) {
+    return [
+      x + warpX.GetNoise(x, z)           * amp,
+      z + warpZ.GetNoise(x + 3.7, z + 8.3) * amp,
+    ];
+  }
+
+  function getBaseHeight(x, z) {
+    const [wx, wz] = warpCoords(x, z, warpAmp);
+    return baseFbm.GetNoise(wx, wz);  // [-1, 1]
+  }
+
+  function getPeakHeight(x, z) {
+    const [wx, wz] = warpCoords(x, z, peakWarpAmp);
+    const raw = peakRidged.GetNoise(wx, wz);
+    const n   = (raw + 1) * 0.5;
+    if (n < cfg.peakThresh) return 0;
+    return (n - cfg.peakThresh) / (1 - cfg.peakThresh);
+  }
+
+  return { getBaseHeight, getPeakHeight };
+}
+
+// ── Canvas drawing ────────────────────────────────────────────
+function makeCanvas(label) {
+  const wrap = document.createElement('div');
+  wrap.className = 'panel';
+  const lbl = document.createElement('label');
+  lbl.textContent = label;
+  const cv  = document.createElement('canvas');
+  cv.width  = SIZE;
+  cv.height = SIZE;
+  wrap.appendChild(lbl);
+  wrap.appendChild(cv);
+  return { wrap, cv };
+}
+
+const GREY = t => { const v = t * 255 | 0; return [v, v, v]; };
+const HEAT = t => {
+  // black → blue → green → yellow → white
+  if (t < 0.25) return [0, 0, t * 4 * 200 | 0];
+  if (t < 0.5)  return [0, (t - 0.25) * 4 * 200 | 0, 200];
+  if (t < 0.75) return [(t - 0.5) * 4 * 255 | 0, 200, 200 - (t - 0.5) * 4 * 200 | 0];
+  return [255, 255, (t - 0.75) * 4 * 255 | 0];
+};
+const TOPO = t => {
+  if (t < 0.15) return [10, 20, 60];               // deep (ocean/low)
+  if (t < 0.3)  { const s=(t-0.15)/0.15; return [10+s*60|0, 60+s*60|0, 30]; }
+  if (t < 0.55) { const s=(t-0.3)/0.25;  return [70+s*30|0, 120+s*40|0, 40+s*20|0]; }
+  if (t < 0.75) { const s=(t-0.55)/0.2;  return [100+s*80|0, 100+s*40|0, 80+s*40|0]; }
+  { const s=(t-0.75)/0.25; return [180+s*75|0, 180+s*75|0, 180+s*75|0]; } // snow
+};
+
+function draw(cv, data, colFn) {
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(SIZE, SIZE);
+  let lo = Infinity, hi = -Infinity;
+  for (const v of data) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const range = hi - lo || 1;
+  for (let i = 0; i < data.length; i++) {
+    const t = (data[i] - lo) / range;
+    const [r, g, b] = colFn(t);
+    img.data[i*4]   = r;
+    img.data[i*4+1] = g;
+    img.data[i*4+2] = b;
+    img.data[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ── Render ────────────────────────────────────────────────────
+function render() {
+  const cfg = getCfg();
+  document.getElementById('seed-display').textContent = seed;
+
+  const sampler = makeSampler(seed, cfg);
+
+  const baseData  = new Float32Array(SIZE * SIZE);
+  const peakData  = new Float32Array(SIZE * SIZE);
+  const warpData  = new Float32Array(SIZE * SIZE); // warp displacement magnitude
+  const blendData = new Float32Array(SIZE * SIZE);
+  const finalData = new Float32Array(SIZE * SIZE);
+
+  // Build a cheap warp-viz sampler (same seeds)
+  const warpVizX = new FastNoiseLite(seed + 7919);
+  warpVizX.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+  warpVizX.SetFractalType(FastNoiseLite.FractalType.FBm);
+  warpVizX.SetFractalOctaves(3);
+  warpVizX.SetFractalGain(0.5);
+  warpVizX.SetFrequency(cfg.warpFreq);
+
+  const warpVizZ = new FastNoiseLite(seed + 104723);
+  warpVizZ.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+  warpVizZ.SetFractalType(FastNoiseLite.FractalType.FBm);
+  warpVizZ.SetFractalOctaves(3);
+  warpVizZ.SetFractalGain(0.5);
+  warpVizZ.SetFrequency(cfg.warpFreq);
+
+  for (let zi = 0; zi < SIZE; zi++) {
+    for (let xi = 0; xi < SIZE; xi++) {
+      const wx = (xi / SIZE - 0.5) * WORLD;
+      const wz = (zi / SIZE - 0.5) * WORLD;
+      const idx = zi * SIZE + xi;
+
+      const base = sampler.getBaseHeight(wx, wz);
+      const peak = sampler.getPeakHeight(wx, wz);
+      const blended = base * cfg.blend + peak * (1 - cfg.blend);
+
+      // Valley
+      let height = blended;
+      if (cfg.valleyDepth > 0) {
+        const sigma = cfg.valleyWidth * WORLD * 0.5;
+        const mask  = Math.exp(-(wx * wx) / (2 * sigma * sigma));
+        height = height * (1 - cfg.valleyDepth * mask);
+      }
+
+      // Warp magnitude for visualisation
+      const dwx = warpVizX.GetNoise(wx, wz);
+      const dwz = warpVizZ.GetNoise(wx + 3.7, wz + 8.3);
+      warpData[idx] = Math.sqrt(dwx * dwx + dwz * dwz);
+
+      baseData[idx]  = base;
+      peakData[idx]  = peak;
+      blendData[idx] = blended;
+      finalData[idx] = height;
+    }
+  }
+
+  const container = document.getElementById('panels');
+  container.innerHTML = '';
+
+  const panels = [
+    { label: 'Base (FBm rolling hills)',    data: baseData,  col: GREY },
+    { label: 'Peaks (Ridged + threshold)',  data: peakData,  col: GREY },
+    { label: 'Warp displacement magnitude', data: warpData,  col: HEAT },
+    { label: 'Blended (no valley)',         data: blendData, col: GREY },
+    { label: 'Final (greyscale)',           data: finalData, col: GREY },
+    { label: 'Final (topo colours)',        data: finalData, col: TOPO },
+  ];
+
+  for (const { label, data, col } of panels) {
+    const { wrap, cv } = makeCanvas(label);
+    draw(cv, data, col);
+    container.appendChild(wrap);
+  }
+}
+
+// ── Wire controls ─────────────────────────────────────────────
+const bindings = {
+  blend:      { fmt: v => v.toFixed(2) },
+  persistence:{ fmt: v => v.toFixed(2) },
+  baseFreq:   { fmt: fmtFreq },
+  peakFreq:   { fmt: fmtFreq },
+  warpAmp:    { fmt: v => v.toFixed(0) },
+  warpFreq:   { fmt: fmtFreq },
+  peakThresh: { fmt: v => v.toFixed(2) },
+  baseOct:    { fmt: v => v.toFixed(0) },
+  peakOct:    { fmt: v => v.toFixed(0) },
+  valleyDepth:{ fmt: v => v.toFixed(2) },
+  valleyWidth:{ fmt: v => v.toFixed(2) },
+};
+
+for (const [id, { fmt }] of Object.entries(bindings)) {
+  const el  = document.getElementById(id);
+  const val = document.getElementById(id + '-v');
+  el.addEventListener('input', () => { val.textContent = fmt(+el.value); render(); });
+}
+
+render();
+</script>
+</body>
+</html>

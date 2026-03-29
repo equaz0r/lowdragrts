@@ -23,6 +23,7 @@
   "dependencies": {
     "@types/dat.gui": "^0.7.13",
     "dat.gui": "^0.7.9",
+    "fastnoise-lite": "^1.1.1",
     "postprocessing": "^6.37.1",
     "simplex-noise": "^4.0.3",
     "simplex-noise-esm": "^2.5.0-esm.0",

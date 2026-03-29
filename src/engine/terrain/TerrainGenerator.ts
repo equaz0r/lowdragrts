@@ -29,8 +29,8 @@ import {
     Object3D
 } from 'three';
 import { GridSystem } from './GridSystem';
-import { SimplexNoise } from 'three/examples/jsm/math/SimplexNoise';
-import { TerrainParameters, ReflectionParameters, CoordinateMarkerParameters } from '../config/GameParameters';
+import { NoiseSampler } from '../utils/NoiseSampler';
+import { TerrainParameters, ReflectionParameters, CoordinateMarkerParameters, EdgeParameters } from '../config/GameParameters';
 import { ReflectionControls } from '../ui/ReflectionControls';
 import { LightingSystem } from './LightingSystem';
 import { BufferPool } from '../utils/BufferPool';
@@ -43,22 +43,42 @@ interface WebGLProgramParametersWithUniforms {
 }
 
 export interface TerrainConfig {
+    // Shape
     heightScale: number;
-    persistence: number;
-    basePeakBlend: number;
+    persistence: number;      // fractal gain — roughness of both layers
+    basePeakBlend: number;    // 0 = all peaks, 1 = all base rolling hills
+    // Noise frequencies
+    baseFrequency: number;    // scale of rolling hills (lower = bigger features)
+    peakFrequency: number;    // scale of mountain ridges
+    // Domain warp
+    warpAmplitude: number;    // how far coordinates are displaced (0 = off)
+    warpFrequency: number;    // scale of the warp itself
+    // Peak shape
+    peakThreshold: number;    // 0..1 — values below this are flat (fewer peaks = higher)
+    // Octave detail
+    baseOctaves: number;
+    peakOctaves: number;
+    // Valley
     valleyEnabled: boolean;
-    valleyWidth: number;   // fraction of total map width (0.05 – 0.5)
-    valleyDepth: number;   // 0 = no effect, 1 = flat floor
+    valleyWidth: number;      // fraction of total map width (0.05 – 0.5)
+    valleyDepth: number;      // 0 = no effect, 1 = flat floor
 }
 
 export class TerrainGenerator {
     public config: TerrainConfig = {
-        heightScale: TerrainParameters.HEIGHT_SCALE,
-        persistence: TerrainParameters.PERSISTENCE,
+        heightScale:   TerrainParameters.HEIGHT_SCALE,
+        persistence:   TerrainParameters.PERSISTENCE,
         basePeakBlend: 0.6,
+        baseFrequency: 0.0004,
+        peakFrequency: 0.0008,
+        warpAmplitude: 350,
+        warpFrequency: 0.0002,
+        peakThreshold: 0.40,
+        baseOctaves:   5,
+        peakOctaves:   6,
         valleyEnabled: true,
-        valleyWidth: 0.18,
-        valleyDepth: 0.72,
+        valleyWidth:   0.18,
+        valleyDepth:   0.72,
     };
 
     private readonly gridSystem: GridSystem;
@@ -67,7 +87,7 @@ export class TerrainGenerator {
     private material: Material | null = null;
     private terrainMesh: Mesh | null = null;
     private markerGroup: Object3D | null = null;
-    private noise: SimplexNoise;
+    private seed: number;
     private bufferPool: BufferPool;
     private currentBuffers: {
         vertex: Float32Array | null;
@@ -77,6 +97,7 @@ export class TerrainGenerator {
         height: Float32Array | null;
     };
     private shaderMaterial: WebGLProgramParametersWithUniforms | null = null;
+    private edgeUniforms: Record<string, { value: any }> | null = null;
     private geometry: BufferGeometry | null = null;
     private reflectionControls: ReflectionControls;
 
@@ -84,7 +105,7 @@ export class TerrainGenerator {
         this.scene = scene;
         this.gridSystem = gridSystem;
         this.camera = camera;
-        this.noise = new SimplexNoise();
+        this.seed = Math.random() * 2147483647 | 0;
         this.bufferPool = BufferPool.getInstance();
         
         // Initialize current buffers with null values
@@ -139,7 +160,7 @@ export class TerrainGenerator {
             this.terrainMesh = null;
         }
         if (newSeed) {
-            this.noise = new SimplexNoise();
+            this.seed = Math.random() * 2147483647 | 0;
         }
         try {
             this.terrainMesh = await this.generate();
@@ -194,6 +215,7 @@ export class TerrainGenerator {
         this.ensureBufferSize('index', indexCount);
         this.ensureBufferSize('height', vertexCount);
 
+        const sampler = new NoiseSampler(this.seed, this.config);
         let minHeight = Infinity;
         let maxHeight = -Infinity;
 
@@ -203,11 +225,10 @@ export class TerrainGenerator {
                 const index = x + z * (divisions + 1);
                 const xPos = (x - divisions / 2) * segmentSize;
                 const zPos = (z - divisions / 2) * segmentSize;
-                
-                const baseHeight = this.generateBaseHeight(this.noise, xPos * TerrainParameters.BASE_NOISE_FREQUENCY, zPos * TerrainParameters.BASE_NOISE_FREQUENCY);
-                const peakHeight = this.generatePeakHeight(this.noise, xPos, zPos);
-                const blend = this.config.basePeakBlend;
-                const rawHeight = baseHeight * blend + peakHeight * (1 - blend);
+
+                const baseH = sampler.getBaseHeight(xPos, zPos);
+                const peakH = sampler.getPeakHeight(xPos, zPos);
+                const rawHeight = baseH * this.config.basePeakBlend + peakH * (1 - this.config.basePeakBlend);
                 let height = this.angularizeHeight(rawHeight) * this.config.heightScale;
 
                 // Valley carving — Gaussian mask along X axis (valley runs through centre in Z direction)
@@ -307,73 +328,9 @@ export class TerrainGenerator {
         const material = this.createTerrainMaterial(totalSize);
         const mesh = new Mesh(this.geometry, material);
 
-        // Create edge wireframe
+        // Create edge wireframe — colour and animation handled entirely in shader
         const baseEdgeGeometry = new EdgesGeometry(this.geometry, 0.1);
-        const baseEdgeMaterial = new LineBasicMaterial({ 
-            vertexColors: true,
-            transparent: true,
-            opacity: TerrainParameters.EDGE_OPACITY,
-            blending: AdditiveBlending,
-            depthWrite: false
-        });
-
-        // Create color array for edge vertices based on height
-        const edgeColors: number[] = [];
-        const edgePositions = baseEdgeGeometry.attributes.position.array;
-        const edgeColor = new Color();
-        const whiteColor = new Color(0xffffff);
-
-        for (let i = 0; i < edgePositions.length; i += 6) {
-            const y1 = edgePositions[i + 1];
-            const y2 = edgePositions[i + 4];
-            const avgHeight = (y1 + y2) / 2;
-            
-            // Normalize height against absolute scale so parameter changes are visually apparent
-            const normalizedHeight = Math.max(0, Math.min(1, avgHeight / this.config.heightScale));
-            
-            if (normalizedHeight < TerrainParameters.LOW_HEIGHT_THRESHOLD) {
-                // Low terrain - orange color
-                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR);
-                // Adjust opacity based on grid alignment
-                const x1 = edgePositions[i];
-                const z1 = edgePositions[i + 2];
-                const x2 = edgePositions[i + 3];
-                const z2 = edgePositions[i + 5];
-                const isAligned = Math.abs(x1 - x2) < 0.1 || Math.abs(z1 - z2) < 0.1;
-                const intensity = isAligned ? TerrainParameters.ALIGNED_EDGE_INTENSITY : TerrainParameters.NON_ALIGNED_EDGE_INTENSITY;
-                edgeColor.multiplyScalar(intensity);
-            } else if (normalizedHeight < TerrainParameters.TRANSITION_THRESHOLD) {
-                // Transition zone - blend between orange and green
-                const t = (normalizedHeight - TerrainParameters.LOW_HEIGHT_THRESHOLD) / 
-                         (TerrainParameters.TRANSITION_THRESHOLD - TerrainParameters.LOW_HEIGHT_THRESHOLD);
-                edgeColor.copy(TerrainParameters.LOW_EDGE_COLOR).lerp(TerrainParameters.HIGH_EDGE_COLOR, t);
-                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + 
-                                (t * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
-                edgeColor.multiplyScalar(intensity);
-            } else {
-                // Higher terrain - green with increasing intensity
-                const heightFactor = (normalizedHeight - TerrainParameters.TRANSITION_THRESHOLD) / 
-                                   (1 - TerrainParameters.TRANSITION_THRESHOLD);
-                const intensity = TerrainParameters.HEIGHT_INTENSITY_MIN + 
-                                (heightFactor * (TerrainParameters.HEIGHT_INTENSITY_MAX - TerrainParameters.HEIGHT_INTENSITY_MIN));
-                edgeColor.copy(TerrainParameters.HIGH_EDGE_COLOR).multiplyScalar(intensity);
-                
-                // Add white blend for higher elevations
-                if (heightFactor > 0.5) {
-                    const whiteBlend = (heightFactor - 0.5) * 0.4;
-                    edgeColor.lerp(whiteColor, whiteBlend);
-                }
-            }
-            
-            // Add colors for both vertices of the edge
-            edgeColors.push(
-                edgeColor.r, edgeColor.g, edgeColor.b,
-                edgeColor.r, edgeColor.g, edgeColor.b
-            );
-        }
-
-        // Apply colors to edge geometry
-        baseEdgeGeometry.setAttribute('color', new Float32BufferAttribute(edgeColors, 3));
+        const baseEdgeMaterial = this.createEdgeMaterial(minHeight, maxHeight);
         const baseEdges = new LineSegments(baseEdgeGeometry, baseEdgeMaterial);
         mesh.add(baseEdges);
 
@@ -450,51 +407,6 @@ export class TerrainGenerator {
         });
         
         return new Sprite(spriteMaterial);
-    }
-
-    /**
-     * Common noise generation method used by both base and peak height generation
-     */
-    private generateNoise(
-        noise: SimplexNoise,
-        x: number,
-        z: number,
-        baseFrequency: number,
-        octaves: number,
-        noiseConfigs: ReadonlyArray<{
-            frequencyMultiplier: number,
-            offset?: number,
-            useAbsolute?: boolean
-        }>,
-        weights: readonly number[],
-        amplitudeFalloff: number,
-        frequencyIncrease: number
-    ): number {
-        let height = 0;
-        let amplitude = 1;
-        let frequency = baseFrequency;
-        let maxAmplitude = 0;
-
-        for (let i = 0; i < octaves; i++) {
-            // Generate noise samples with different frequencies and offsets
-            const noiseSamples = noiseConfigs.map(config => {
-                const sampleX = x * frequency * config.frequencyMultiplier + (config.offset || 0);
-                const sampleZ = z * frequency * config.frequencyMultiplier + (config.offset || 0);
-                const noiseValue = noise.noise(sampleX, sampleZ);
-                return config.useAbsolute ? Math.abs(noiseValue) : noiseValue;
-            });
-
-            // Weighted blend of noise samples
-            const noiseValue = noiseSamples.reduce((sum, sample, index) => 
-                sum + sample * weights[index], 0);
-            
-            height += noiseValue * amplitude;
-            maxAmplitude += amplitude;
-            amplitude *= amplitudeFalloff;
-            frequency *= frequencyIncrease;
-        }
-
-        return height / maxAmplitude;
     }
 
     private createTerrainMaterial(gridSize: number): MeshStandardMaterial {
@@ -620,53 +532,137 @@ export class TerrainGenerator {
         return material;
     }
 
-    /**
-     * Generate base terrain height (angular plateaus)
-     */
-    private generateBaseHeight(noise: SimplexNoise, x: number, z: number): number {
-        return this.generateNoise(
-            noise,
-            x,
-            z,
-            TerrainParameters.NOISE_SCALE,
-            TerrainParameters.BASE_NOISE_OCTAVES,
-            [
-                { frequencyMultiplier: 1.0 },
-                { frequencyMultiplier: 1.1, useAbsolute: true },
-                { frequencyMultiplier: 0.7 }
-            ],
-            TerrainParameters.BASE_NOISE_WEIGHTS,
-            TerrainParameters.BASE_AMPLITUDE_FALLOFF,
-            TerrainParameters.BASE_FREQUENCY_INCREASE
-        );
+    private createEdgeMaterial(minHeight: number, maxHeight: number): LineBasicMaterial {
+        // Build live uniform value objects. These are stored in this.edgeUniforms so
+        // EdgeControls can mutate them directly — no regen needed for appearance changes.
+        const layers = EdgeParameters.layers;
+
+        // Ensure layer heights are strictly ascending (prevents smoothstep divide-by-zero)
+        const sortedHeights = layers.map((l, i) => Math.max(l.heightFraction, i * 0.001));
+
+        const layerHeightsVal   = new Float32Array(sortedHeights);
+        const layerColorsVal    = layers.map(l => l.color.clone());
+        const layerIntensityVal = new Float32Array(layers.map(l => l.intensity));
+
+        const timeVal         = { value: 0 };
+        const pulseSpeedVal   = { value: EdgeParameters.pulseSpeed };
+        const pulseIntVal     = { value: EdgeParameters.pulseIntensity };
+        const pulseWidthVal   = { value: EdgeParameters.pulseWidth };
+        const minHVal         = { value: minHeight };
+        const maxHVal         = { value: maxHeight };
+
+        this.edgeUniforms = {
+            layerHeights:     { value: layerHeightsVal },
+            layerColors:      { value: layerColorsVal },
+            layerIntensities: { value: layerIntensityVal },
+            time:             timeVal,
+            pulseSpeed:       pulseSpeedVal,
+            pulseIntensity:   pulseIntVal,
+            pulseWidth:       pulseWidthVal,
+            minTerrainHeight: minHVal,
+            maxTerrainHeight: maxHVal,
+        };
+
+        const material = new LineBasicMaterial({
+            transparent: true,
+            opacity: 1.0,
+            blending: AdditiveBlending,
+            depthWrite: false,
+        });
+
+        const eu = this.edgeUniforms;
+        material.onBeforeCompile = (shader) => {
+            // Add uniforms
+            Object.assign(shader.uniforms, eu);
+
+            // ── Vertex: pass world Y and XZ to fragment ──────────────────────
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <common>',
+                `#include <common>
+                varying float vWorldY;
+                varying vec2  vWorldXZ;`
+            );
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `#include <begin_vertex>
+                vec4 _wpos = modelMatrix * vec4( transformed, 1.0 );
+                vWorldY  = _wpos.y;
+                vWorldXZ = _wpos.xz;`
+            );
+
+            // ── Fragment: 5-layer colour ramp + animated pulse ────────────────
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+                varying float vWorldY;
+                varying vec2  vWorldXZ;
+
+                uniform float minTerrainHeight;
+                uniform float maxTerrainHeight;
+                uniform float layerHeights[5];
+                uniform vec3  layerColors[5];
+                uniform float layerIntensities[5];
+                uniform float time;
+                uniform float pulseSpeed;
+                uniform float pulseIntensity;
+                uniform float pulseWidth;
+
+                // Hash 80-world-unit cells for per-edge timing variation
+                float edgeHash( vec2 p ) {
+                    vec2 ip = floor( p / 80.0 );
+                    return fract( sin( dot( ip, vec2(127.1, 311.7) ) ) * 43758.5453 );
+                }
+
+                // Progressive smoothstep blend through 5 layers
+                vec3 sampleLayers( float t ) {
+                    vec3 c = layerColors[0] * layerIntensities[0];
+                    c = mix( c, layerColors[1] * layerIntensities[1], smoothstep( layerHeights[0], max(layerHeights[0]+0.001, layerHeights[1]), t ) );
+                    c = mix( c, layerColors[2] * layerIntensities[2], smoothstep( layerHeights[1], max(layerHeights[1]+0.001, layerHeights[2]), t ) );
+                    c = mix( c, layerColors[3] * layerIntensities[3], smoothstep( layerHeights[2], max(layerHeights[2]+0.001, layerHeights[3]), t ) );
+                    c = mix( c, layerColors[4] * layerIntensities[4], smoothstep( layerHeights[3], max(layerHeights[3]+0.001, layerHeights[4]), t ) );
+                    return c;
+                }
+
+                // Single upward pulse: sharp leading edge, exponential trailing glow
+                // pos is normalised [0,1] head position travelling upward
+                float onePulse( float y, float pos, float w ) {
+                    float d       = pos - y;           // >0 = above (not arrived), <0 = passed (trailing)
+                    float trailing = exp( -max(0.0, -d) / w );
+                    float leading  = exp( -max(0.0,  d) / (w * 0.12) );
+                    return trailing * leading;
+                }
+
+                // Three overlapping pulses with independent speeds + per-edge phase offsets
+                vec3 computePulse( float y, float eh ) {
+                    float i1 = onePulse( y, fract(time*pulseSpeed          + eh),                pulseWidth );
+                    float i2 = onePulse( y, fract(time*pulseSpeed*0.61     + eh*0.73 + 0.33),    pulseWidth*1.5  ) * 0.65;
+                    float i3 = onePulse( y, fract(time*pulseSpeed*0.37     + eh*1.31 + 0.67),    pulseWidth*2.1  ) * 0.45;
+                    float total = i1 + i2 + i3;
+                    // Electric colour: warm orange-white at low heights → cool cyan at peaks
+                    vec3 pColor = mix( vec3(1.0, 0.55, 0.05), vec3(0.25, 0.9, 1.0), y );
+                    return pColor * total * pulseIntensity;
+                }`
+            );
+
+            // Override diffuseColor with layer ramp + pulse overlay
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <color_fragment>',
+                `#include <color_fragment>
+                float _range = max(1.0, maxTerrainHeight - minTerrainHeight);
+                float _ny    = clamp((vWorldY - minTerrainHeight) / _range, 0.0, 1.0);
+                float _eh    = edgeHash(vWorldXZ);
+                diffuseColor.rgb = sampleLayers(_ny) + computePulse(_ny, _eh);`
+            );
+
+            (material as any).customShader = shader;
+        };
+
+        return material;
     }
 
-    /**
-     * Generate mountain peak height
-     */
-    private generatePeakHeight(noise: SimplexNoise, x: number, z: number): number {
-        // Use the noise configurations directly from TerrainParameters
-        const height = this.generateNoise(
-            noise,
-            x,
-            z,
-            TerrainParameters.NOISE_SCALE * TerrainParameters.PEAK_NOISE_FREQUENCY_MULTIPLIER,
-            TerrainParameters.NOISE_OCTAVES,
-            TerrainParameters.PEAK_NOISE_CONFIGS,
-            TerrainParameters.PEAK_NOISE_WEIGHTS,
-            this.config.persistence,
-            TerrainParameters.LACUNARITY
-        );
-
-        // Multi-stage threshold with broader transition
-        const normalizedHeight = (height - TerrainParameters.PEAK_LOW_THRESHOLD) / 
-            (TerrainParameters.PEAK_HIGH_THRESHOLD - TerrainParameters.PEAK_LOW_THRESHOLD);
-        
-        if (normalizedHeight <= 0) return 0;
-        if (normalizedHeight >= 1) return 1;
-        
-        // Smoother transition using double smoothstep
-        return this.smoothstep(this.smoothstep(normalizedHeight));
+    /** Allow EdgeControls to update edge uniforms directly without a full regen. */
+    public getEdgeUniforms(): Record<string, { value: any }> | null {
+        return this.edgeUniforms;
     }
 
     /**
@@ -690,11 +686,13 @@ export class TerrainGenerator {
     }
 
     public update(time: number): void {
-        // Always read from the current material's compiled shader — avoids stale reference after regenerate
         const shader = (this.material as any)?.customShader;
         if (shader?.uniforms) {
             shader.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
             shader.uniforms.time = { value: time };
+        }
+        if (this.edgeUniforms) {
+            this.edgeUniforms.time.value = time;
         }
     }
 

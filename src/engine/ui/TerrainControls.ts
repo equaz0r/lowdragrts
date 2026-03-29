@@ -155,40 +155,75 @@ export class TerrainControls {
         }));
     }
 
+    private createSectionLabel(text: string): void {
+        const el = document.createElement('div');
+        el.style.fontSize = '10px';
+        el.style.fontWeight = 'bold';
+        el.style.opacity = '0.8';
+        el.style.marginBottom = '3px';
+        el.textContent = text;
+        this.container.appendChild(el);
+    }
+
     private createControls(): void {
         const cfg = this.terrainGenerator.config;
 
-        this.createSlider('Height Scale', 400, 3000, cfg.heightScale, 50, (v) => {
+        this.createSectionLabel('Shape');
+        this.createSlider('Height Scale', 200, 3000, cfg.heightScale, 50, (v) => {
             this.terrainGenerator.config.heightScale = v;
-        }, 'Overall terrain amplitude — taller mountains and deeper valleys');
+        }, 'Overall terrain amplitude');
 
-        this.createSlider('Persistence', 0.3, 0.8, cfg.persistence, 0.01, (v) => {
+        this.createSlider('Persistence', 0.2, 0.8, cfg.persistence, 0.01, (v) => {
             this.terrainGenerator.config.persistence = v;
-        }, 'Lower = smoother slopes; higher = more jagged detail');
+        }, 'Fractal gain — lower = smoother, higher = rougher/more detail');
 
-        this.createSlider('Base/Peak Blend', 0.1, 0.9, cfg.basePeakBlend, 0.01, (v) => {
+        this.createSlider('Base/Peak Blend', 0.0, 1.0, cfg.basePeakBlend, 0.01, (v) => {
             this.terrainGenerator.config.basePeakBlend = v;
-        }, 'Higher = more rolling base terrain; lower = more mountain spikes');
+        }, '1.0 = all rolling hills, 0.0 = all ridged peaks');
 
         this.createSeparator();
+        this.createSectionLabel('Noise Frequency');
+        this.createSlider('Base Scale', 0.0001, 0.002, cfg.baseFrequency, 0.0001, (v) => {
+            this.terrainGenerator.config.baseFrequency = v;
+        }, 'Scale of rolling hills — lower = larger features');
 
-        // Valley section label
-        const valleyLabel = document.createElement('div');
-        valleyLabel.style.fontSize = '10px';
-        valleyLabel.style.fontWeight = 'bold';
-        valleyLabel.style.opacity = '0.8';
-        valleyLabel.style.marginBottom = '3px';
-        valleyLabel.textContent = 'Valley';
-        this.container.appendChild(valleyLabel);
+        this.createSlider('Peak Scale', 0.0002, 0.003, cfg.peakFrequency, 0.0001, (v) => {
+            this.terrainGenerator.config.peakFrequency = v;
+        }, 'Scale of mountain ridges');
 
-        // Valley enabled toggle
+        this.createSeparator();
+        this.createSectionLabel('Domain Warp');
+        this.createSlider('Warp Strength', 0, 800, cfg.warpAmplitude, 10, (v) => {
+            this.terrainGenerator.config.warpAmplitude = v;
+        }, 'How much coordinates are twisted before sampling (0 = off)');
+
+        this.createSlider('Warp Scale', 0.00005, 0.0006, cfg.warpFrequency, 0.00005, (v) => {
+            this.terrainGenerator.config.warpFrequency = v;
+        }, 'Scale of the warp pattern — lower = larger twists');
+
+        this.createSeparator();
+        this.createSectionLabel('Peak Shape');
+        this.createSlider('Peak Threshold', 0.1, 0.75, cfg.peakThreshold, 0.01, (v) => {
+            this.terrainGenerator.config.peakThreshold = v;
+        }, 'Higher = fewer, more isolated peaks; lower = ridges cover more area');
+
+        this.createSlider('Base Detail', 2, 8, cfg.baseOctaves, 1, (v) => {
+            this.terrainGenerator.config.baseOctaves = Math.round(v);
+        }, 'Octaves for rolling hills — more = finer surface detail');
+
+        this.createSlider('Peak Detail', 2, 8, cfg.peakOctaves, 1, (v) => {
+            this.terrainGenerator.config.peakOctaves = Math.round(v);
+        }, 'Octaves for mountain ridges');
+
+        this.createSeparator();
+        this.createSectionLabel('Valley');
+
         const toggleRow = document.createElement('div');
         toggleRow.style.display = 'flex';
         toggleRow.style.alignItems = 'center';
         toggleRow.style.gap = '6px';
         toggleRow.style.marginBottom = '3px';
         toggleRow.style.fontSize = '11px';
-
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = cfg.valleyEnabled;
@@ -205,11 +240,11 @@ export class TerrainControls {
 
         this.createSlider('Valley Width', 0.05, 0.5, cfg.valleyWidth, 0.01, (v) => {
             this.terrainGenerator.config.valleyWidth = v;
-        }, 'Width of the valley corridor as a fraction of map size');
+        }, 'Width of the valley as a fraction of map size');
 
         this.createSlider('Valley Depth', 0.0, 1.0, cfg.valleyDepth, 0.01, (v) => {
             this.terrainGenerator.config.valleyDepth = v;
-        }, 'How deeply the valley carves into the terrain (0 = none, 1 = flat floor)');
+        }, '0 = no effect, 1 = flat valley floor');
 
         this.createSeparator();
 
