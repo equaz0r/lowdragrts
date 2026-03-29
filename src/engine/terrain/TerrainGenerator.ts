@@ -98,10 +98,9 @@ export class TerrainGenerator {
 
         // Initialize reflection controls with lighting system
         this.reflectionControls = new ReflectionControls((params) => {
-            if (this.shaderMaterial?.uniforms) {
-                this.shaderMaterial.uniforms.reflectionParams.value.copy(params);
-                
-                // Mark the material as needing an update
+            const shader = (this.material as any)?.customShader;
+            if (shader?.uniforms) {
+                shader.uniforms.reflectionParams.value.copy(params);
                 if (this.material) {
                     this.material.needsUpdate = true;
                 }
@@ -129,30 +128,28 @@ export class TerrainGenerator {
         }
     }
 
-    public async regenerate(): Promise<void> {
-        console.log('[TerrainGenerator] regenerate() called. terrainMesh=', this.terrainMesh, 'config=', JSON.stringify(this.config));
+    // newSeed=true (Regenerate button): randomises terrain topology
+    // newSeed=false (slider change): rebuilds with same topology, new parameters
+    public async regenerate(newSeed: boolean = true): Promise<void> {
         if (this.terrainMesh) {
             this.scene.remove(this.terrainMesh);
+            if (this.terrainMesh.material instanceof Material) {
+                (this.terrainMesh.material as Material).dispose();
+            }
             this.terrainMesh = null;
-            console.log('[TerrainGenerator] Old mesh removed from scene.');
-        } else {
-            console.log('[TerrainGenerator] No existing terrainMesh to remove.');
         }
-        // New noise instance gives different terrain topology each regeneration
-        this.noise = new SimplexNoise();
-        console.log('[TerrainGenerator] New SimplexNoise created. Starting generate()...');
+        if (newSeed) {
+            this.noise = new SimplexNoise();
+        }
         try {
             this.terrainMesh = await this.generate();
-            console.log('[TerrainGenerator] generate() returned mesh:', this.terrainMesh);
             this.scene.add(this.terrainMesh);
-            console.log('[TerrainGenerator] New mesh added to scene.');
             if (this.terrainMesh.material instanceof Material) {
                 this.material = this.terrainMesh.material;
             }
         } catch (error) {
             console.error('[TerrainGenerator] generate() threw:', error);
         }
-        console.log('[TerrainGenerator] regenerate() done.');
     }
 
     public dispose(): void {
@@ -693,16 +690,11 @@ export class TerrainGenerator {
     }
 
     public update(time: number): void {
-        if (this.shaderMaterial?.uniforms) {
-            // Update camera-dependent uniforms
-            this.shaderMaterial.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
-        }
-        // Update any time-based animations or effects
-        if (this.material && (this.material as any).customShader) {
-            const shader = (this.material as any).customShader;
-            if (shader.uniforms) {
-                shader.uniforms.time = { value: time };
-            }
+        // Always read from the current material's compiled shader — avoids stale reference after regenerate
+        const shader = (this.material as any)?.customShader;
+        if (shader?.uniforms) {
+            shader.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
+            shader.uniforms.time = { value: time };
         }
     }
 
