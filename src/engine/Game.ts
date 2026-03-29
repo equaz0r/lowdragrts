@@ -59,7 +59,15 @@ export class Game {
         // Then initialize grid and terrain
         this.gridSystem = new GridSystem(this.scene, this.camera);
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem, this.camera, this.lightingSystem);
-        this.terrainControls = new TerrainControls(this.terrainGenerator);
+        this.terrainControls = new TerrainControls(this.terrainGenerator, () => {
+            // Reset camera to default overview on new terrain generation
+            this.camera.position.set(200, 200, 200);
+            this.camera.lookAt(0, 0, 0);
+            if (this.controls) {
+                this.controls.target.set(0, 0, 0);
+                this.controls.update();
+            }
+        });
 
         // Set initial sun height
         if (this.lightingSystem) {

@@ -3,12 +3,16 @@ import { TerrainGenerator } from '../terrain/TerrainGenerator';
 export class TerrainControls {
     private container: HTMLDivElement;
     private terrainGenerator: TerrainGenerator;
+    private onNewTerrain: (() => void) | undefined;
     private regenerating: boolean = false;
     private debounceTimer: ReturnType<typeof setTimeout> | null = null;
     private btn!: HTMLButtonElement;
+    private statusEl!: HTMLDivElement;
+    private regenCount: number = 0;
 
-    constructor(terrainGenerator: TerrainGenerator) {
+    constructor(terrainGenerator: TerrainGenerator, onNewTerrain?: () => void) {
         this.terrainGenerator = terrainGenerator;
+        this.onNewTerrain = onNewTerrain;
 
         this.container = document.createElement('div');
         this.container.style.position = 'absolute';
@@ -134,8 +138,14 @@ export class TerrainControls {
         requestAnimationFrame(() => requestAnimationFrame(async () => {
             try {
                 await this.terrainGenerator.regenerate(newSeed);
+                this.regenCount++;
+                this.statusEl.textContent = `Generated #${this.regenCount}${newSeed ? ' (new seed)' : ' (same seed)'}`;
+                if (newSeed && this.onNewTerrain) {
+                    this.onNewTerrain();
+                }
             } catch (e) {
                 console.error('[TerrainControls] regenerate() threw:', e);
+                this.statusEl.textContent = 'Error — check console';
             } finally {
                 this.regenerating = false;
                 this.btn.textContent = 'Regenerate';
@@ -229,6 +239,14 @@ export class TerrainControls {
         });
 
         this.container.appendChild(this.btn);
+
+        // Status line — shows regen count so we can confirm it's firing
+        this.statusEl = document.createElement('div');
+        this.statusEl.style.marginTop = '4px';
+        this.statusEl.style.fontSize = '10px';
+        this.statusEl.style.opacity = '0.5';
+        this.statusEl.textContent = 'Ready';
+        this.container.appendChild(this.statusEl);
     }
 
     public dispose(): void {
