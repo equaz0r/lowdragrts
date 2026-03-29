@@ -239,7 +239,7 @@ export class TerrainGenerator {
                 const zPos = (z - divisions / 2) * segmentSize;
                 const height = this.currentBuffers.height ? this.currentBuffers.height[index] : 0;
                 
-                const normalizedHeight = Math.pow((height - minHeight) / heightRange, 1.2);
+                const normalizedHeight = Math.pow(Math.max(0, Math.min(1, height / this.config.heightScale)), 1.2);
                 
                 // Set vertex position
                 if (this.currentBuffers.vertex) {
@@ -328,8 +328,8 @@ export class TerrainGenerator {
             const y2 = edgePositions[i + 4];
             const avgHeight = (y1 + y2) / 2;
             
-            // Normalize height and create color gradient
-            const normalizedHeight = (avgHeight - minHeight) / heightRange;
+            // Normalize height against absolute scale so parameter changes are visually apparent
+            const normalizedHeight = Math.max(0, Math.min(1, avgHeight / this.config.heightScale));
             
             if (normalizedHeight < TerrainParameters.LOW_HEIGHT_THRESHOLD) {
                 // Low terrain - orange color

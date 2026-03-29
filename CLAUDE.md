@@ -163,6 +163,7 @@ npm run build     # Production bundle → public/bundle.js
 | Mar–Apr 2025 | state-machine-implementation | Terrain rebuild, lighting system, buffer pooling, performance monitor |
 | Mar 2026 | main | Promoted state-machine-implementation to main; regenerated CLAUDE.md |
 | 28 Mar 2026 | main | Phase 2 in progress: TerrainControls UI, valley carving, tuned defaults; committed and pushed to origin/main |
+| 29 Mar 2026 | main | Fixed terrain sliders/Regenerate having no visible effect. Root cause: index.ts was instantiating Game as a side effect of being imported by main.ts — two Game instances, two scenes, two animate() loops; first instance always won the canvas. Fix: index.ts now only re-exports Game; main.ts owns the single instance. Also fixed: vertex colour and edge line normalisation changed from relative (per-terrain min/max) to absolute (against heightScale) so parameter changes are visually apparent. HMR cleanup added to main.ts. |
 
 ---
 *Update this file at the end of every coding session.*
