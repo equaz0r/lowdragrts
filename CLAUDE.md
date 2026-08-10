@@ -8,7 +8,7 @@ A heightmap-based real-time strategy game inspired by Total Annihilation. Built 
 
 This branch (`main`) is the **terrain/rendering/engine branch**. No units, combat, projectiles, or resources yet. Focus is the visual engine and pre-Phase-3 gameplay architecture.
 
-The `old-main` branch on GitHub contains the old combat and unit code for reference.
+The old combat/unit code lives in history at commit `3b6eeea` ("Improved combat system") — the `old-main` branch itself was deleted 10 Aug 2026 (fully merged into `main`'s lineage already, checked out via `git log 3b6eeea` if needed).
 
 ## Tech Stack
 - **TypeScript** (strict mode, ES6 target)
@@ -92,7 +92,6 @@ public/
 - ❌ Resource system (Skirulum, Vlux, Fredalite, Scrap)
 - ❌ Buildings / production / AI / minimap
 - ⚠️ postprocessing: imported, not wired
-- ⚠️ ShaderManager.ts: legacy, superseded by onBeforeCompile injection — can be deleted
 
 ## Active Tuning Notes (review at session start)
 
@@ -145,8 +144,8 @@ Lock in 2–3 good named configs (e.g. `PRESET_DRAMATIC`, `PRESET_ROLLING`, `PRE
 ## Remaining Refactoring Tasks
 
 ### Small / safe
-- **Delete `src/engine/shaders/ShaderManager.ts`** — legacy file, entirely superseded by `onBeforeCompile` injection in `TerrainMaterial.ts` and `EdgeMaterial.ts`. Also delete `skybox.frag/vert` and `sunHalo.frag/vert` if confirmed unused.
-- **Split `ReflectionControls.ts` import** — currently imports both `ReflectionParameters` and `LightingParameters` on two lines; could be one `import { ..., ... } from '../config/LightingConfig'` (cosmetic).
+- ✅ ~~Delete `ShaderManager.ts` + unused `skybox`/`sunHalo` shaders~~ — done 10 Aug 2026
+- **Split `ReflectionControls.ts` import** — currently imports both `ReflectionParameters` and `LightingParameters` on two lines; could be one `import { ..., ... } from '../config/LightingConfig'` (cosmetic). Still open post-config-split — verify on next touch of that file.
 
 ### Before Phase 3 (must-do)
 - **InstancedMesh unit renderer architecture** — design `UnitRenderer.ts` in `units/` before writing any unit code. Retrofitting instancing after units exist is painful. Decide: one `InstancedMesh` per unit type, synced each frame from `UnitManager`.
@@ -231,6 +230,7 @@ Pre-requisite architecture in place:
 | 29 Mar 2026 | Doubled map to 8000×8000. Edge grid replaced with GPU shader: 5-layer height colour ramp + animated electric pulse (3 overlapping pulses, per-edge hash offset, AdditiveBlending neon glow). EdgeControls live debug panel. |
 | 01 Apr 2026 | Added HeightMap (terrain/HeightMap.ts): retained height data, bilinear queries, surface normals, slope, traversability, ground orientation (slope-tilt + heading), flying altitude. TerrainGenerator.getHeightMap() exposes to all gameplay systems. |
 | 01 Apr 2026 | Source refactor: TerrainGenerator 766→348 lines; TerrainMaterial.ts + EdgeMaterial.ts extracted (shader logic unchanged); GameParameters.ts split into TerrainConfig/LightingConfig/CameraConfig; dead coordinate-marker code removed; stub folders created for units/movement/combat/resources/buildings/ai. |
+| 10 Aug 2026 | Resumed after break. Verified branch history (reflog + merge-base) — confirmed the 01 Apr refactor was uncommitted-but-legitimate work on top of `main`, not a stray branch. Committed it (build + `tsc --noEmit` both clean). Deleted legacy `ShaderManager.ts` + unused `skybox`/`sunHalo` shader files (confirmed zero references first). Untracked `public/bundle.js` (was tracked before it got gitignored). Pruned 6 stale branches, local + remote (`old-main`, `backup/debug-ui-wip`, `feature/tron-aesthetic`, `main-28-03-26`, `state-machine-implementation`, `terrain-rebuild`) — all fully merged into `main`, verified with `git merge-base --is-ancestor`. Repo now has a single branch: `main`. |
 
 ---
 *Update this file at the end of every coding session.*
