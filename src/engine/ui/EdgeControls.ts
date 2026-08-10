@@ -2,6 +2,14 @@ import { Color } from 'three';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { EdgeParameters } from '../config/TerrainConfig';
 
+/** JSON-safe snapshot of EdgeParameters — see SettingsIO.ts. */
+export interface EdgeSettings {
+    layers: { heightFraction: number; color: string; intensity: number }[];
+    pulseSpeed: number;
+    pulseIntensity: number;
+    pulseWidth: number;
+}
+
 /**
  * Debug panel for live-editing the edge colour layers and pulse animation.
  * All changes update shader uniforms directly — no terrain regen needed.
@@ -28,6 +36,16 @@ export class EdgeControls {
             minWidth:        '230px',
         });
 
+        this.renderAll();
+        document.body.appendChild(this.container);
+    }
+
+    // Full rebuild from EdgeParameters — used at construction and after
+    // importSettings(), so the sliders/colour pickers reflect whatever just
+    // changed the underlying values (same pattern as TerrainControls.renderAll).
+    private renderAll(): void {
+        this.container.innerHTML = '';
+
         const title = document.createElement('div');
         title.textContent = 'Grid Appearance';
         Object.assign(title.style, {
@@ -40,8 +58,6 @@ export class EdgeControls {
 
         this.buildLayerSection();
         this.buildPulseSection();
-
-        document.body.appendChild(this.container);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -240,6 +256,50 @@ export class EdgeControls {
             },
             'Fraction of terrain height covered by one pulse tail',
         );
+    }
+
+    // ── Export / Import ─────────────────────────────────────────────────────
+
+    public exportSettings(): EdgeSettings {
+        return {
+            layers: EdgeParameters.layers.map(l => ({
+                heightFraction: l.heightFraction,
+                color: '#' + l.color.getHexString(),
+                intensity: l.intensity,
+            })),
+            pulseSpeed: EdgeParameters.pulseSpeed,
+            pulseIntensity: EdgeParameters.pulseIntensity,
+            pulseWidth: EdgeParameters.pulseWidth,
+        };
+    }
+
+    public importSettings(data: EdgeSettings): void {
+        data.layers.forEach((l, i) => {
+            const target = EdgeParameters.layers[i];
+            if (!target) return;
+            target.heightFraction = l.heightFraction;
+            target.color.set(l.color);
+            target.intensity = l.intensity;
+        });
+        EdgeParameters.pulseSpeed = data.pulseSpeed;
+        EdgeParameters.pulseIntensity = data.pulseIntensity;
+        EdgeParameters.pulseWidth = data.pulseWidth;
+
+        // Push into the live shader uniforms too — same values the individual
+        // slider handlers write, so this takes effect without a regenerate.
+        const u = this.getUniforms();
+        if (u) {
+            EdgeParameters.layers.forEach((l, i) => {
+                (u.layerHeights.value as Float32Array)[i] = l.heightFraction;
+                (u.layerIntensities.value as Float32Array)[i] = l.intensity;
+                (u.layerColors.value as Color[])[i].copy(l.color);
+            });
+            u.pulseSpeed.value = EdgeParameters.pulseSpeed;
+            u.pulseIntensity.value = EdgeParameters.pulseIntensity;
+            u.pulseWidth.value = EdgeParameters.pulseWidth;
+        }
+
+        this.renderAll(); // refresh sliders/pickers to match
     }
 
     public dispose(): void {

@@ -3,6 +3,16 @@ import { ReflectionParameters } from '../config/LightingConfig';
 import { LightingParameters } from '../config/LightingConfig';
 import { LightingSystem } from '../terrain/LightingSystem';
 
+/** JSON-safe snapshot of this panel's tunables — see SettingsIO.ts. */
+export interface ReflectionSettings {
+    metalness: number;
+    roughness: number;
+    positionFactor: number;
+    reflectionPower: number;
+    sunIntensity: number;
+    sunHeight: number;
+}
+
 export class ReflectionControls {
     private container: HTMLDivElement;
     private onUpdate: (params: Vector4) => void;
@@ -27,6 +37,14 @@ export class ReflectionControls {
         this.container.style.zIndex = '1000';
         this.container.style.minWidth = '180px';
 
+        this.renderAll();
+        document.body.appendChild(this.container);
+    }
+
+    // Full rebuild — used at construction and after importSettings().
+    private renderAll(): void {
+        this.container.innerHTML = '';
+
         const title = document.createElement('div');
         title.textContent = 'Terrain Controls';
         title.style.fontSize = '11px';
@@ -37,7 +55,6 @@ export class ReflectionControls {
         this.container.appendChild(title);
 
         this.createControls();
-        document.body.appendChild(this.container);
     }
 
     private createSlider(
@@ -120,8 +137,11 @@ export class ReflectionControls {
             this.onUpdate(this.currentParams);
         }, 'Controls how rough or smooth the surface appears');
 
-        // Position factor control
-        this.createSlider('Position Factor', 0, 5, this.currentParams.z, 0.1, (value) => {
+        // Position factor control — min is 0.1, not 0: this value is smoothstep's
+        // edge1 in TerrainMaterial.ts and edge0==edge1 is undefined GLSL behaviour
+        // (produced a NaN/white blowout bug at exactly 0). Shader has its own floor
+        // too, but keeping the slider clear of it is the simpler guarantee.
+        this.createSlider('Position Factor', 0.1, 5, this.currentParams.z, 0.1, (value) => {
             this.currentParams.z = value;
             this.onUpdate(this.currentParams);
         }, 'Controls how reflection strength varies with terrain position');
@@ -145,12 +165,16 @@ export class ReflectionControls {
         separator.style.margin = '15px 0';
         this.container.appendChild(separator);
 
-        // Sun height control
-        this.createSlider('Sun Height', 
-            Number(LightingParameters.SUN_MIN_HEIGHT), 
-            Number(LightingParameters.SUN_MAX_HEIGHT), 
-            0.5, 
-            0.01, 
+        // Sun height control — initial value reads the configured TARGET (was
+        // hardcoded 0.5 regardless of reality). Deliberately getTargetSunHeight(),
+        // not getSunHeight(): the latter is the smoothed, still-animating value —
+        // reading it here, before any frames have run, would just show the OLD
+        // height and fight the intentional ease-in animation.
+        this.createSlider('Sun Height',
+            Number(LightingParameters.SUN_MIN_HEIGHT),
+            Number(LightingParameters.SUN_MAX_HEIGHT),
+            this.lightingSystem.getTargetSunHeight(),
+            0.01,
             (value) => {
                 if (this.lightingSystem) {
                     this.lightingSystem.setSunHeight(value);
@@ -158,6 +182,27 @@ export class ReflectionControls {
             },
             'Controls the height of the sun in the sky'
         );
+    }
+
+    // ── Export / Import ─────────────────────────────────────────────────────
+
+    public exportSettings(): ReflectionSettings {
+        return {
+            metalness: this.currentParams.x,
+            roughness: this.currentParams.y,
+            positionFactor: this.currentParams.z,
+            reflectionPower: this.currentParams.w,
+            sunIntensity: LightingParameters.SUN_BASE_INTENSITY,
+            sunHeight: this.lightingSystem.getTargetSunHeight(),
+        };
+    }
+
+    public importSettings(data: ReflectionSettings): void {
+        this.currentParams.set(data.metalness, data.roughness, data.positionFactor, data.reflectionPower);
+        this.onUpdate(this.currentParams);
+        this.lightingSystem.setSunIntensity(data.sunIntensity);
+        this.lightingSystem.setSunHeight(data.sunHeight);
+        this.renderAll(); // refresh sliders to match
     }
 
     public dispose(): void {

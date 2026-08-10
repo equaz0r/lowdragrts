@@ -1,7 +1,7 @@
 import { Color, Vector4 } from 'three';
 
 export const LightingParameters = {
-    SKY_TOP_COLOR:    new Color(0x0033cc),
+    SKY_TOP_COLOR:    new Color(0x1a0640), // deep purple-blue zenith, was pure blue
     SKY_MIDDLE_COLOR: new Color(0x6699ff),
     SKY_BOTTOM_COLOR: new Color(0xff9966),
     SKY_GRADIENT_OFFSET:   400,
@@ -14,7 +14,14 @@ export const LightingParameters = {
     SUN_ORBIT_RADIUS:  8000,
     SUN_MAX_HEIGHT:    0.65,
     SUN_MIN_HEIGHT:    -0.8,
-    SUN_BASE_INTENSITY: 1.1,
+    SUN_BASE_INTENSITY: 1.75, // Simon's hand-tuned scene, 11 Aug 2026
+    // Applied ONLY to the DirectionalLight that actually illuminates the
+    // terrain (LightingSystem.ts's updateSunPosition, the heightFactor-based
+    // assignment — the one that wins each frame). The sun disc's own opacity
+    // and the halo intensity do NOT read this — they stay at full
+    // SUN_BASE_INTENSITY, so the sun can look exactly as bright in the sky
+    // as before while contributing much less light to terrain shading.
+    SUN_TERRAIN_LIGHT_SCALE: 0.45,
 
     SUN_MIN_SCALE:   0.4,
     SUN_MAX_SCALE:   4.0,
@@ -24,39 +31,72 @@ export const LightingParameters = {
     SUN_TRANSITION_END:      0.7,
     SUN_LOW_DEPTH_THRESHOLD: 0.3,
 
-    SUN_GRADIENT_BOTTOM: new Color(0x000066),
-    SUN_GRADIENT_MIDDLE: new Color(0xff1133),
-    SUN_GRADIENT_TOP:    new Color(0xff6600),
+    // Was deep BLUE at the bottom (0x000066) — bottom half should read as
+    // deep dark red at low sun, top half brighter yellowy-orange (echoes the
+    // reference image's sun banding).
+    SUN_GRADIENT_BOTTOM: new Color(0x5c0010),
+    SUN_GRADIENT_MIDDLE: new Color(0xd42200),
+    SUN_GRADIENT_TOP:    new Color(0xffb020),
 
-    HALO_SIZE:         6000,
-    HALO_INTENSITY:    0.4,
+    // Size restored to (near) original — geometric footprint and intensity
+    // are independent uniforms (see the halo fragment shader: alpha comes
+    // from the plane's own radial falloff, separately scaled by `intensity`).
+    // Shrinking BOTH last round to fix bloom bleed was heavy-handed: a big
+    // plane at a modest intensity reads as a proper large soft glow without
+    // pushing enough HDR energy to bloom hard.
+    HALO_SIZE:         5500,
+    HALO_INTENSITY:    0.24,
     HALO_FRONT_OFFSET: 50,
     HALO_BACK_OFFSET:  -50,
 
-    AMBIENT_BASE_INTENSITY:  0.3,
+    // Lowered for genuine blacks — ambient was flattening contrast everywhere
+    // regardless of the reflection bug; neon glow needs real dark to read
+    // against, not a uniformly-lit grey scene.
+    AMBIENT_BASE_INTENSITY:  0.12,
     SUN_INTENSITY_RANGE:     [0.7, 1.0],
-    AMBIENT_INTENSITY_RANGE: [0.3, 0.5],
+    AMBIENT_INTENSITY_RANGE: [0.12, 0.22],
 
     SUN_HEIGHT_SMOOTH_SPEED: 0.15,
 } as const;
 
 export const ReflectionParameters = {
-    REFLECTION_PARAMS: new Vector4(0.4, 0.6, 1.0, 0.4),
+    // x=metalness, y=roughness, z=positionFactor,
+    // w=power — the EXPONENT applied to the combined reflection factor in
+    // TerrainMaterial.ts's calculateReflection(). Counter-intuitive: HIGHER
+    // exponent = MORE selective/rare highlights (pow pulls values < 1 down
+    // toward 0); values near 0 make reflection ≈1.0 (max) almost everywhere
+    // regardless of angle. "Reflection Power" in the UI slider reads
+    // backwards from this at the low end — turning it down maxes reflection
+    // out, not off. Value below (0.90) is Simon's hand-tuned scene, 11 Aug
+    // 2026 — still comfortably clear of the near-0 collapse zone.
+    REFLECTION_PARAMS: new Vector4(0.61, 0.47, 0.30, 0.90),
     SUN_INTENSITY:     0.5,
 
-    VIEW_FACTOR_WEIGHT:     1.5,
-    SUN_FACTOR_WEIGHT:      1.2,
-    POSITION_FACTOR_WEIGHT: 0.6,
-    PANEL_FACTOR_WEIGHT:    0.2,
-    GRAZING_FACTOR_WEIGHT:  1.0,
+    // Data-driven (simulated calculateReflection() in isolation, matching the
+    // shader formula exactly, across 100k random viewing angles) — not
+    // guessed. The previous round cut these hard to kill a saturation bug
+    // (91% of angles maxed out — see git history); with the clamp() fix in
+    // TerrainMaterial.ts, that's now a non-issue regardless of weight, so
+    // these are boosted back up ~1.5x for a genuinely visible glint: avg
+    // reflectionStrength ~0.64, ~20% of angles hit full strength (a real
+    // highlight, not everywhere) rather than the prior ~0.29/0% (barely
+    // there) or the original 91%-saturated mess.
+    VIEW_FACTOR_WEIGHT:     0.55,
+    SUN_FACTOR_WEIGHT:      0.45,
+    POSITION_FACTOR_WEIGHT: 0.15,
+    PANEL_FACTOR_WEIGHT:    0.08,
+    GRAZING_FACTOR_WEIGHT:  0.32,
 
     SUN_FACTOR_POWER:     0.6,
-    VIEW_FACTOR_POWER:    1.0,
+    VIEW_FACTOR_POWER:    1.2,
     HEIGHT_FACTOR_POWER:  0.3,
-    GRAZING_FACTOR_POWER: 0.8,
+    GRAZING_FACTOR_POWER: 1.2,
 
-    MIN_REFLECTION:    0.1,
-    REFLECTION_BLEND:  1.2,
+    MIN_REFLECTION:    0.05,
+    // Was 1.2 — GLSL mix() doesn't clamp its blend factor, so anything over
+    // 1.0 here overshoots past the reflection colour itself (extrapolation,
+    // not blending), which was blowing out brightness independent of bloom.
+    REFLECTION_BLEND:  0.85,
 
     WEST_FALLOFF_START:  -4000,
     WEST_FALLOFF_LENGTH:  8000,

@@ -1,4 +1,13 @@
-import { TerrainGenerator } from '../terrain/TerrainGenerator';
+import { TerrainGenerator, TerrainPresets, TerrainConfig } from '../terrain/TerrainGenerator';
+
+/** Decimal places to show for a slider's step size. A flat toFixed(2) truncated
+ *  tiny-magnitude sliders (baseFrequency etc., step ~0.0001) to a useless "0.00" —
+ *  this scales precision to the step instead, so those still read as real numbers. */
+function displayDecimals(step: number): number {
+    if (step < 0.001) return 6;
+    if (step < 1) return 2;
+    return 0;
+}
 
 export class TerrainControls {
     private container: HTMLDivElement;
@@ -27,6 +36,15 @@ export class TerrainControls {
         this.container.style.zIndex = '1000';
         this.container.style.minWidth = '180px';
 
+        this.renderAll();
+        document.body.appendChild(this.container);
+    }
+
+    // Full rebuild — used at construction and after applying a preset, so slider
+    // positions/displays reflect whatever just changed the underlying config.
+    private renderAll(): void {
+        this.container.innerHTML = '';
+
         const title = document.createElement('div');
         title.textContent = 'Terrain Shape';
         title.style.fontSize = '11px';
@@ -37,7 +55,6 @@ export class TerrainControls {
         this.container.appendChild(title);
 
         this.createControls();
-        document.body.appendChild(this.container);
     }
 
     private createSlider(
@@ -88,14 +105,15 @@ export class TerrainControls {
         slider.style.accentColor = '#666';
         slider.style.opacity = '0.8';
 
+        const decimals = displayDecimals(step);
         const display = document.createElement('span');
-        display.textContent = value.toFixed(step < 1 ? 2 : 0);
+        display.textContent = value.toFixed(decimals);
         display.style.minWidth = '35px';
         display.style.fontSize = '10px';
 
         slider.addEventListener('input', () => {
             const v = parseFloat(slider.value);
-            display.textContent = v.toFixed(step < 1 ? 2 : 0);
+            display.textContent = v.toFixed(decimals);
             onChange(v);
             // Auto-apply after slider settles — same terrain topology, new parameters
             this.scheduleRegenerate();
@@ -165,6 +183,49 @@ export class TerrainControls {
         this.container.appendChild(el);
     }
 
+    // Preset buttons apply a full known-good config (overwriting whatever the
+    // sliders currently hold), refresh the panel to match, then regenerate with
+    // a new seed — same "new map" semantics as the Regenerate button.
+    private createPresetButtons(): void {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.gap = '4px';
+        row.style.marginBottom = '3px';
+
+        const labels: Record<keyof typeof TerrainPresets, string> = {
+            PRESET_DRAMATIC: 'Dramatic',
+            PRESET_ROLLING: 'Rolling',
+            PRESET_BATTLEFIELD: 'Battlefield',
+        };
+
+        (Object.keys(TerrainPresets) as Array<keyof typeof TerrainPresets>).forEach((key) => {
+            const btn = document.createElement('button');
+            btn.textContent = labels[key];
+            btn.style.flex = '1';
+            btn.style.padding = '3px 0';
+            btn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            btn.style.color = 'white';
+            btn.style.border = '1px solid rgba(255, 255, 255, 0.25)';
+            btn.style.borderRadius = '3px';
+            btn.style.fontFamily = 'monospace';
+            btn.style.fontSize = '10px';
+            btn.style.cursor = 'pointer';
+
+            btn.addEventListener('mouseenter', () => { btn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; });
+            btn.addEventListener('mouseleave', () => { btn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; });
+
+            btn.addEventListener('click', () => {
+                Object.assign(this.terrainGenerator.config, TerrainPresets[key]);
+                this.renderAll(); // slider positions reflect the preset immediately
+                this.triggerRegenerate(true); // new seed — a preset is a new map
+            });
+
+            row.appendChild(btn);
+        });
+
+        this.container.appendChild(row);
+    }
+
     private createControls(): void {
         const cfg = this.terrainGenerator.config;
 
@@ -216,6 +277,41 @@ export class TerrainControls {
         }, 'Octaves for mountain ridges');
 
         this.createSeparator();
+        this.createSectionLabel('Regions (flatland / mountain)');
+
+        const regionToggleRow = document.createElement('div');
+        regionToggleRow.style.display = 'flex';
+        regionToggleRow.style.alignItems = 'center';
+        regionToggleRow.style.gap = '6px';
+        regionToggleRow.style.marginBottom = '3px';
+        regionToggleRow.style.fontSize = '11px';
+        const regionCheckbox = document.createElement('input');
+        regionCheckbox.type = 'checkbox';
+        regionCheckbox.checked = cfg.regionMaskEnabled;
+        regionCheckbox.style.accentColor = '#666';
+        regionCheckbox.addEventListener('change', () => {
+            this.terrainGenerator.config.regionMaskEnabled = regionCheckbox.checked;
+            this.scheduleRegenerate();
+        });
+        const regionToggleLabel = document.createElement('label');
+        regionToggleLabel.textContent = 'Enabled';
+        regionToggleRow.appendChild(regionCheckbox);
+        regionToggleRow.appendChild(regionToggleLabel);
+        this.container.appendChild(regionToggleRow);
+
+        this.createSlider('Zone Size', 0.00001, 0.0001, cfg.regionMaskFrequency, 0.000005, (v) => {
+            this.terrainGenerator.config.regionMaskFrequency = v;
+        }, 'Lower = fewer, bigger flatland/mountain zones');
+
+        this.createSlider('Flat Variation', 0, 0.6, cfg.regionFlatAmplitude, 0.02, (v) => {
+            this.terrainGenerator.config.regionFlatAmplitude = v;
+        }, '0 = dead flat, higher = more minor bumpiness in flatland zones');
+
+        this.createSlider('Mountain Amplitude', 0.5, 1.5, cfg.regionMountainAmplitude, 0.05, (v) => {
+            this.terrainGenerator.config.regionMountainAmplitude = v;
+        }, 'Height multiplier inside mountain zones — above 1.0 exaggerates them');
+
+        this.createSeparator();
         this.createSectionLabel('Valley');
 
         const toggleRow = document.createElement('div');
@@ -245,6 +341,45 @@ export class TerrainControls {
         this.createSlider('Valley Depth', 0.0, 1.0, cfg.valleyDepth, 0.01, (v) => {
             this.terrainGenerator.config.valleyDepth = v;
         }, '0 = no effect, 1 = flat valley floor');
+
+        this.createSeparator();
+        this.createSectionLabel('Plateaus (build sites)');
+
+        const plateauToggleRow = document.createElement('div');
+        plateauToggleRow.style.display = 'flex';
+        plateauToggleRow.style.alignItems = 'center';
+        plateauToggleRow.style.gap = '6px';
+        plateauToggleRow.style.marginBottom = '3px';
+        plateauToggleRow.style.fontSize = '11px';
+        const plateauCheckbox = document.createElement('input');
+        plateauCheckbox.type = 'checkbox';
+        plateauCheckbox.checked = cfg.plateauEnabled;
+        plateauCheckbox.style.accentColor = '#666';
+        plateauCheckbox.addEventListener('change', () => {
+            this.terrainGenerator.config.plateauEnabled = plateauCheckbox.checked;
+            this.scheduleRegenerate();
+        });
+        const plateauToggleLabel = document.createElement('label');
+        plateauToggleLabel.textContent = 'Enabled';
+        plateauToggleRow.appendChild(plateauCheckbox);
+        plateauToggleRow.appendChild(plateauToggleLabel);
+        this.container.appendChild(plateauToggleRow);
+
+        this.createSlider('Count', 0, 8, cfg.plateauCount, 1, (v) => {
+            this.terrainGenerator.config.plateauCount = Math.round(v);
+        }, 'Number of flat build-sites to place');
+
+        this.createSlider('Radius', 200, 1200, cfg.plateauRadius, 20, (v) => {
+            this.terrainGenerator.config.plateauRadius = v;
+        }, 'Size of each flat site, world units');
+
+        this.createSlider('Edge Sharpness', 0.1, 0.95, cfg.plateauEdge, 0.01, (v) => {
+            this.terrainGenerator.config.plateauEdge = v;
+        }, 'Lower = soft gradual mound, higher = sharp mesa-like cliff edge');
+
+        this.createSeparator();
+        this.createSectionLabel('Presets');
+        this.createPresetButtons();
 
         this.createSeparator();
 
@@ -282,6 +417,25 @@ export class TerrainControls {
         this.statusEl.style.opacity = '0.5';
         this.statusEl.textContent = 'Ready';
         this.container.appendChild(this.statusEl);
+    }
+
+    // ── Export / Import ─────────────────────────────────────────────────────
+    // TerrainConfig is already plain numbers/booleans — JSON-safe as-is,
+    // unlike EdgeSettings/ReflectionSettings which need a THREE.Color->hex step.
+
+    public exportSettings(): TerrainConfig {
+        return { ...this.terrainGenerator.config };
+    }
+
+    public importSettings(data: TerrainConfig): void {
+        Object.assign(this.terrainGenerator.config, data);
+        this.renderAll();
+        // false = keep the current seed. Unlike Presets (deliberately a new map),
+        // a settings load should reproduce the EXACT saved terrain — the caller
+        // (SettingsIO) sets the saved seed via terrainGenerator.setSeed() before
+        // calling this; regenerating with a fresh random seed here would
+        // immediately discard that.
+        this.triggerRegenerate(false);
     }
 
     public dispose(): void {

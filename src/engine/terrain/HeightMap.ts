@@ -11,13 +11,14 @@ import { Vector3, Quaternion } from 'three';
  */
 export class HeightMap {
     private readonly heights: Float32Array;
-    private readonly divisions: number;     // 200 render-mesh divisions
-    private readonly segmentSize: number;   // world units per grid step (40)
+    private readonly divisions: number;     // render-mesh divisions == GridSystem.getCellCount() (125)
+    private readonly segmentSize: number;   // world units per grid step — == GridParameters.CELL_SIZE (64)
     private readonly halfSize: number;      // totalSize / 2
 
     /**
      * @param heights   Flat row-major height buffer: index = x + z * (divisions + 1)
-     * @param divisions Render mesh division count (NOT GridParameters.DIVISIONS — see TerrainGenerator)
+     * @param divisions Render mesh division count. Deliberately == GridSystem.getCellCount(),
+     *                  so mesh vertices and grid corners are the same points — see TerrainGrid.ts.
      * @param totalSize World-space size of the terrain (8000)
      */
     constructor(heights: Float32Array, divisions: number, totalSize: number) {
@@ -155,6 +156,47 @@ export class HeightMap {
     public getFlyingY(worldX: number, worldZ: number, targetAltitude: number, minClearance: number = 50): number {
         const terrainY = this.getHeightAt(worldX, worldZ);
         return terrainY + Math.max(minClearance, targetAltitude);
+    }
+
+    /** True if (x, z) falls within the terrain's world-space extent. Queries
+     *  outside bounds don't throw (worldToGrid clamps), so callers that need
+     *  to distinguish "edge of map" from "off the map" should check this first. */
+    public isInBounds(worldX: number, worldZ: number): boolean {
+        return worldX >= -this.halfSize && worldX <= this.halfSize
+            && worldZ >= -this.halfSize && worldZ <= this.halfSize;
+    }
+
+    /**
+     * True if a footprint of the given radius centred at (x, z) is flat and
+     * shallow enough to build on. Samples the centre plus 4 points at the
+     * footprint edge; requires every sample within `maxSlopeRad` AND the
+     * height spread across all samples within a flatness tolerance.
+     *
+     * `maxSlopeRad` defaults far stricter than general unit traversability
+     * (~0.5-0.7 rad / 30-40°) — buildings need close-to-flat ground, not just
+     * "a ground unit can stand on it".
+     */
+    public isBuildable(worldX: number, worldZ: number, footprintRadius: number, maxSlopeRad: number = 0.15): boolean {
+        if (!this.isInBounds(worldX, worldZ)) return false;
+
+        const samples: Array<[number, number]> = [
+            [worldX, worldZ],
+            [worldX + footprintRadius, worldZ],
+            [worldX - footprintRadius, worldZ],
+            [worldX, worldZ + footprintRadius],
+            [worldX, worldZ - footprintRadius],
+        ];
+
+        let minH = Infinity;
+        let maxH = -Infinity;
+        for (const [x, z] of samples) {
+            if (!this.isInBounds(x, z)) return false;
+            if (this.getSlopeAngle(x, z) > maxSlopeRad) return false;
+            const h = this.getHeightAt(x, z);
+            minH = Math.min(minH, h);
+            maxH = Math.max(maxH, h);
+        }
+        return (maxH - minH) <= footprintRadius * 0.15;
     }
 
     // ─── Metadata ────────────────────────────────────────────────────────────

@@ -42,6 +42,39 @@ export class GridSystem {
         return this.camera;
     }
 
+    // ─── World ↔ cell conversion ────────────────────────────────────────────
+    // The logical placement grid — unit positioning and building footprints
+    // (1x1/2x2/3x3, see BuildingFootprints in TerrainConfig.ts) snap to these
+    // same cells. Only `+ - * / Math.floor`, so this is safe to reuse from
+    // sim/ once the Phase-4 NavGrid needs the same conversion — no rework.
+
+    /** Number of cells along one axis. 8000 / 64 = 125. */
+    public getCellCount(): number {
+        return Math.floor(this._totalSize / this._cellSize);
+    }
+
+    /** World (x, z) → the cell containing it. */
+    public worldToCell(worldX: number, worldZ: number): { cx: number; cz: number } {
+        const half = this._totalSize / 2;
+        return {
+            cx: Math.floor((worldX + half) / this._cellSize),
+            cz: Math.floor((worldZ + half) / this._cellSize),
+        };
+    }
+
+    /** Cell (cx, cz) → world position of its min corner. */
+    public cellToWorld(cx: number, cz: number): { x: number; z: number } {
+        const half = this._totalSize / 2;
+        return { x: cx * this._cellSize - half, z: cz * this._cellSize - half };
+    }
+
+    /** Cell (cx, cz) → world position of its centre. */
+    public cellCenterWorld(cx: number, cz: number): { x: number; z: number } {
+        const corner = this.cellToWorld(cx, cz);
+        const half   = this._cellSize / 2;
+        return { x: corner.x + half, z: corner.z + half };
+    }
+
     // Setters with validation
     public setTotalSize(size: number): void {
         if (size < GridParameters.MIN_TOTAL_SIZE || size > GridParameters.MAX_TOTAL_SIZE) {

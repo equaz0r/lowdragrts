@@ -9,6 +9,7 @@ export interface NoiseSamplerConfig {
     peakThreshold: number;   // [0,1] — values below are zeroed
     baseOctaves:   number;
     peakOctaves:   number;
+    regionMaskFrequency: number; // e.g. 0.00004 — big, coherent flatland/mountain zones
 }
 
 /**
@@ -24,6 +25,7 @@ export class NoiseSampler {
     private readonly peakRidged: FastNoiseLite;
     private readonly warpX:      FastNoiseLite;
     private readonly warpZ:      FastNoiseLite;
+    private readonly regionMask: FastNoiseLite;
     private readonly warpAmp:    number;
     private readonly peakWarpAmp: number;
     private readonly threshold:  number;
@@ -65,6 +67,19 @@ export class NoiseSampler {
         this.warpZ.SetFractalOctaves(3);
         this.warpZ.SetFractalGain(0.5);
         this.warpZ.SetFrequency(cfg.warpFrequency);
+
+        // Region mask — large-scale flatland vs mountain-range zoning. Low
+        // frequency + few octaves on purpose: this should produce big, coherent
+        // blobs (thousands of world units across), not detail. No domain warp
+        // applied — at this scale lattice artifacts aren't visually relevant,
+        // and warping would just blur the zone boundaries we want to keep clear.
+        this.regionMask = new FastNoiseLite(seed + 271828);
+        this.regionMask.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
+        this.regionMask.SetFractalType(FastNoiseLite.FractalType.FBm);
+        this.regionMask.SetFractalOctaves(3);
+        this.regionMask.SetFractalLacunarity(2.0);
+        this.regionMask.SetFractalGain(0.5);
+        this.regionMask.SetFrequency(cfg.regionMaskFrequency);
     }
 
     private warpCoords(x: number, z: number, amplitude: number): [number, number] {
@@ -87,5 +102,17 @@ export class NoiseSampler {
         const normalized = (raw + 1) * 0.5;                  // [0, 1]
         if (normalized < this.threshold) return 0;
         return (normalized - this.threshold) / (1 - this.threshold);
+    }
+
+    /**
+     * Large-scale flatland-vs-mountain zoning. 0 = flatland, 1 = mountain
+     * range, with a smooth transition band between — shaped with a contrast
+     * curve (smoothstep over a narrowed input range) so most of the map reads
+     * as clearly one or the other, not a uniform gradient everywhere.
+     */
+    getRegionMask(x: number, z: number): number {
+        const raw01 = (this.regionMask.GetNoise(x, z) + 1) * 0.5; // [0, 1]
+        const t = Math.max(0, Math.min(1, (raw01 - 0.35) / (0.65 - 0.35)));
+        return t * t * (3 - 2 * t); // smoothstep
     }
 }

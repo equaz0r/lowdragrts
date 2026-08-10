@@ -111,8 +111,9 @@ export function createEdgeMaterial(minHeight: number, maxHeight: number): EdgeMa
                 float i2 = onePulse( y, fract(time*pulseSpeed*0.61     + eh*0.73 + 0.33), pulseWidth*1.5  ) * 0.65;
                 float i3 = onePulse( y, fract(time*pulseSpeed*0.37     + eh*1.31 + 0.67), pulseWidth*2.1  ) * 0.45;
                 float total = i1 + i2 + i3;
-                // Electric colour: warm orange-white at low heights → cool cyan at peaks
-                vec3 pColor = mix( vec3(1.0, 0.55, 0.05), vec3(0.25, 0.9, 1.0), y );
+                // Electric colour: deep purple at low heights → warm orange at
+                // peaks — matches the layer ramp's navy->purple->pink->orange story.
+                vec3 pColor = mix( vec3(0.4, 0.05, 0.6), vec3(1.0, 0.55, 0.1), y );
                 return pColor * total * pulseIntensity;
             }`
         );

@@ -148,13 +148,23 @@ export class LightingSystem {
         this.skyMesh = new THREE.Mesh(skyGeometry, skyMaterial);
         this.scene.add(this.skyMesh);
 
-        // Create the sun sphere with improved depth testing
-        const sunGeometry = new THREE.SphereGeometry(LightingParameters.SUN_GEOMETRY_SIZE, 32, 32);
+        // Flat, camera-facing circle — NOT a 3D sphere. A sphere's surface has
+        // real depth (bulges toward the camera at centre, recedes at the
+        // limb), so under perspective projection a geometrically-flat
+        // slicing plane through it still projects to a slightly curved line.
+        // A flat billboard has no such bulge — same technique the halo
+        // (PlaneGeometry, always .quaternion.copy(camera.quaternion)) already
+        // uses successfully below, just circular instead of square.
+        const sunGeometry = new THREE.CircleGeometry(LightingParameters.SUN_GEOMETRY_SIZE, 64);
         const sunMaterial = new THREE.ShaderMaterial({
             uniforms: {
-                bottomColor: { value: new THREE.Color(0x330066) },
-                middleColor: { value: new THREE.Color(0xff1133) },
-                topColor: { value: new THREE.Color(0xff6600) },
+                // Overwritten almost immediately by updateSunPosition() (called once
+                // at the end of the constructor) — these just avoid a one-frame flash
+                // of stale colour, so keep them roughly matching LightingConfig's
+                // SUN_GRADIENT_* values.
+                bottomColor: { value: new THREE.Color(0x5c0010) },
+                middleColor: { value: new THREE.Color(0xd42200) },
+                topColor: { value: new THREE.Color(0xffb020) },
                 sunHeight: { value: 0.5 },
                 useGradient: { value: 0.0 },
                 opacity: { value: LightingParameters.SUN_OPACITY }
@@ -163,13 +173,20 @@ export class LightingSystem {
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
                 varying vec3 vViewPosition;
-                
+                varying float vLocalY;
+
                 void main() {
                     vNormal = normalize(normalMatrix * normal);
                     vec4 worldPos = modelMatrix * vec4(position, 1.0);
                     vWorldPosition = worldPos.xyz;
                     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                     vViewPosition = mvPosition.xyz;
+                    // Untransformed local Y (object space) — for a sphere, x/y in its
+                    // own local space already form a flat 2D disc parameterisation
+                    // (z is just how far a point bulges toward/away from camera).
+                    // Bands built from this stay straight; bands built from the
+                    // surface NORMAL curve with the sphere (that was the bug).
+                    vLocalY = position.y;
                     gl_Position = projectionMatrix * mvPosition;
                 }
             `,
@@ -180,44 +197,63 @@ export class LightingSystem {
                 uniform float sunHeight;
                 uniform float useGradient;
                 uniform float opacity;
-                
+
                 varying vec3 vNormal;
                 varying vec3 vWorldPosition;
                 varying vec3 vViewPosition;
-                
+                varying float vLocalY;
+
                 void main() {
                     vec3 viewNormal = normalize(vNormal);
                     vec3 viewDir = normalize(vViewPosition);
                     float viewDot = dot(viewNormal, -viewDir);
-                    
-                    // Calculate vertical gradient factor
-                    float gradientT = viewNormal.y * 0.5 + 0.5;
-                    
+
+                    // Flat disc coordinate: 0 = bottom of the sphere, 1 = top.
+                    // Deliberately NOT the surface normal (see vertex shader note) —
+                    // this is what keeps both the colour gradient and the scanlines
+                    // as straight horizontal bands instead of curving with the sphere.
+                    float discT = clamp(vLocalY / ${LightingParameters.SUN_GEOMETRY_SIZE.toFixed(1)}, -1.0, 1.0) * 0.5 + 0.5;
+
                     // Determine final color
                     vec3 finalColor;
                     if (useGradient > 0.5) {
                         // Three-way gradient
-                        if (gradientT < 0.5) {
+                        if (discT < 0.5) {
                             // Bottom half: blend bottom to middle
-                            float t = gradientT * 2.0;
+                            float t = discT * 2.0;
                             finalColor = mix(bottomColor, middleColor, t);
                         } else {
                             // Top half: blend middle to top
-                            float t = (gradientT - 0.5) * 2.0;
+                            float t = (discT - 0.5) * 2.0;
                             finalColor = mix(middleColor, topColor, t);
                         }
                     } else {
                         finalColor = middleColor;
                     }
-                    
+
                     // Apply limb darkening
                     float limbDarkening = pow(max(viewDot, 0.0), 0.5);
                     finalColor *= mix(0.7, 1.0, limbDarkening);
-                    
+
+                    // Retro-sun horizontal scanlines — gaps cut through the disc
+                    // (alpha, not colour), upper half only. Within that half:
+                    // packed tight + thick near the equator (upperT=0), spreading
+                    // out and thinning toward the very top (upperT=1).
+                    float upperT = clamp((discT - 0.5) / 0.5, 0.0, 1.0);
+                    float warped = pow(upperT, 0.4); // small exponent: dense repeats near 0, sparse near 1
+                    float scanBands = fract(warped * 22.0);
+                    float cutWidth = mix(0.40, 0.06, upperT); // thick cuts near equator, thin near pole
+                    float gapMask = step(cutWidth, scanBands); // 0 = inside a cut/gap, 1 = visible sun
+                    // Fade the cuts in gradually from the equator instead of a hard
+                    // on/off switch at discT==0.5 — that read as lines abruptly
+                    // stopping rather than a deliberate transition.
+                    float cutStrength = smoothstep(0.0, 0.18, upperT);
+                    float scanline = mix(1.0, gapMask, cutStrength);
+
                     // Create sharp disc with slight edge softness
                     float disc = smoothstep(0.0, 0.1, viewDot);
-                    
-                    gl_FragColor = vec4(finalColor, disc * opacity);
+
+                    gl_FragColor = vec4(finalColor, disc * opacity * scanline);
                 }
             `,
             transparent: true,
@@ -349,7 +385,13 @@ export class LightingSystem {
         
         // Update sun position
         const maxAngle = 2.6451383319538957;
-        const minAngle = 3.2498987347469224;
+        // Was 3.2498987347469224 — that put the lowest sun position at
+        // y=-865 (BELOW the horizon plane, computed from
+        // sin(angle)*SUN_ORBIT_RADIUS). This value instead lands the minimum
+        // at y=+350 — same orbit radius/distance, sun just doesn't sink
+        // underground. x barely changes (cos near 180° is flat), so the
+        // "setting in the west" direction is unaffected.
+        const minAngle = 3.0978286848490466;
         const angle = minAngle - (normalizedHeight * (minAngle - maxAngle));
         const x = Math.cos(angle) * distance;
         const y = Math.sin(angle) * distance;
@@ -459,7 +501,11 @@ export class LightingSystem {
 
         // Update light intensities based on sun height
         const heightFactor = Math.max(0.3, this.currentSunHeight);
-        this.sunLight.intensity = LightingParameters.SUN_BASE_INTENSITY * heightFactor;
+        // SUN_TERRAIN_LIGHT_SCALE here only — this assignment is what actually
+        // reaches the DirectionalLight each frame (updateSunIntensity() sets
+        // sunLight.intensity too, earlier in this same call chain, but this
+        // line overwrites it). Sun disc/halo brightness elsewhere are untouched.
+        this.sunLight.intensity = LightingParameters.SUN_BASE_INTENSITY * heightFactor * LightingParameters.SUN_TERRAIN_LIGHT_SCALE;
         
         // Calculate ambient intensity using the defined range
         const [minAmbient, maxAmbient] = LightingParameters.AMBIENT_INTENSITY_RANGE;
@@ -472,8 +518,18 @@ export class LightingSystem {
             Math.min(LightingParameters.SUN_MAX_HEIGHT, height));
     }
 
+    /** Smoothed, currently-animating height — what to render with. */
     public getSunHeight(): number {
         return this.currentSunHeight;
+    }
+
+    /** The configured target height, NOT smoothed — what setSunHeight() was
+     *  last called with. Use this (not getSunHeight()) for anything that
+     *  wants "what was actually configured" immediately, e.g. a UI slider's
+     *  initial value read right after construction, before the smoothing in
+     *  updateSunPosition() has had any frames to ease currentSunHeight toward it. */
+    public getTargetSunHeight(): number {
+        return this.targetSunHeight;
     }
 
     public setManualMode(manual: boolean): void {
@@ -496,8 +552,13 @@ export class LightingSystem {
         return this.sunLight.position.clone().normalize();
     }
 
+    /** Current representative sun colour (the shader's mid-tone stop) — for
+     *  other systems (e.g. TerrainMaterial's reflection tint) that want to
+     *  track the sun's actual current colour instead of a fixed one.
+     *  Was previously reading a uniform key ('color') that doesn't exist on
+     *  this material — dead code, would have thrown if ever called. */
     public getSunColor(): THREE.Color {
-        return (this.lightSphere.material as THREE.ShaderMaterial).uniforms.color.value.clone();
+        return (this.lightSphere.material as THREE.ShaderMaterial).uniforms.middleColor.value.clone();
     }
 
     public getSunIntensity(): number {

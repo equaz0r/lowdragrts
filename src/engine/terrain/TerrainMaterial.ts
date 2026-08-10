@@ -91,7 +91,11 @@ export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
                 float viewFactor = pow(viewDot, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
-                float positionFactor = smoothstep(0.0, reflectionParams.z, 1.0 - distanceFromWest);
+                // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
+                // zero internally) when edge0 == edge1 — reflectionParams.z reaching exactly
+                // 0 (its slider's own minimum) produced NaN here, which blooms into a big
+                // white blowout downstream. Floor keeps it defined at every slider position.
+                float positionFactor = smoothstep(0.0, max(0.001, reflectionParams.z), 1.0 - distanceFromWest);
 
                 float panelFactor = getPanelFactor();
 
@@ -102,15 +106,24 @@ export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
                 float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
 
                 float totalFactor = pow(
-                    viewFactor     * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(1)} +
-                    sunFactor      * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(1)} +
-                    positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(1)} +
-                    panelFactor    * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(1)} +
-                    grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(1)},
+                    viewFactor     * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(2)} +
+                    sunFactor      * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(2)} +
+                    positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(2)} +
+                    panelFactor    * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(2)} +
+                    grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(2)},
                     reflectionParams.w
                 );
 
-                return max(${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, totalFactor);
+                // clamp, not max(): totalFactor was UNCLAMPED ABOVE — the weighted sum
+                // routinely exceeds 1.0 (measured ~91% of realistic viewing angles before
+                // this fix), and pow() only makes an already->1 value larger. That
+                // unclamped value then fed THREE separate mix() calls below/downstream as
+                // a blend factor; GLSL's mix() doesn't clamp its factor either, so values
+                // >1 extrapolate PAST their target (negative roughness, metalness >1,
+                // diffuseColor overshoot) instead of blending toward it. This was the
+                // actual source of the pervasive overbrightness — not sun/metalness/
+                // roughness, which is why tuning those had no effect.
+                return clamp(totalFactor, ${ReflectionParameters.MIN_REFLECTION.toFixed(2)}, 1.0);
             }`
         );
 
