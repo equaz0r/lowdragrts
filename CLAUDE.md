@@ -6,164 +6,154 @@ A heightmap-based real-time strategy game inspired by Total Annihilation. Built 
 ## Current Status
 ✅ **Compiles cleanly. Builds successfully. No TypeScript errors.**
 
-This branch (`main`) is the **terrain/rendering/engine branch**. No units, combat, projectiles, or resources yet. Focus is the visual engine and pre-Phase-3 gameplay architecture.
+Phase 2 (terrain) is essentially done — procedural terrain, unified visual/build grid, plateaus, region-masked flatland/mountain zoning, full synthwave visual pass (bloom, lighting, reflections). No units, combat, projectiles, or resources yet.
 
-The old combat/unit code lives in history at commit `3b6eeea` ("Improved combat system") — the `old-main` branch itself was deleted 10 Aug 2026 (fully merged into `main`'s lineage already, checked out via `git log 3b6eeea` if needed).
+A full game-simulation architecture plan exists for Phases 3+ (units, movement, combat, multiplayer, economy, AI) — locked decisions: **multiplayer is a hard goal** (fixed-tick sim, deterministic RNG, command-based input from day 1), **design for 300+ units** (SoA data, InstancedMesh rendering). See `## Phase Plan` below for the condensed version. Full plan: `C:\Users\equaz\.claude\plans\ok-yeah-looks-good-ticklish-locket.md` (outside this repo — Claude Code plan file, not checked into git; condense/re-save into this doc if that file is ever gone).
+
+The old combat/unit code lives in history at commit `3b6eeea` ("Improved combat system") — `old-main` branch was deleted 10 Aug 2026 (fully merged into `main`'s lineage). Verdict from a full audit of it: rewrite-guided-by, not port — its `Unit extends THREE.Object3D` design fuses sim and render and structurally blocks instancing at unit-count scale.
 
 ## Tech Stack
-- **TypeScript** (strict mode, ES6 target)
+- **TypeScript** (strict mode, ES6 target, `moduleResolution: node` — NOT `bundler`, see gotcha below)
 - **Three.js** (3D rendering)
 - **Webpack 5** (bundler + dev server)
-- **fastnoise-lite** (procedural terrain — OpenSimplex2S + domain warp)
-- **postprocessing** (loaded, not yet used)
-- **dat.gui** (loaded, not yet used)
+- **fastnoise-lite** (procedural terrain — OpenSimplex2S + domain warp, also drives the region-mask noise channel)
+- **postprocessing** (pmndrs) — bloom + ACES tone mapping + brightness/contrast + vignette, wired in `Game.ts`
+- **dat.gui** — still an unused dependency (Phase 3 cleanup chore, not done)
+
+### Gotcha: don't switch `moduleResolution` to `"bundler"`
+Tried this while debugging a `postprocessing` type-resolution issue — it broke `three/examples/jsm/...` subpath imports (OrbitControls) and did NOT fix the actual problem. The real fix was deleting a stale hand-written `src/types/postprocessing.d.ts` stub that was shadowing the real package's bundled types. Keep `"node"`.
 
 ## Source Structure
 ```
 src/
-├── index.ts / main.ts
+├── index.ts / main.ts              # index.ts MUST stay a pure re-export, no side effects
+├── sim/                             # NEW — first sim-layer code, Three-free by rule (see Phase Plan)
+│   └── core/
+│       └── Rng.ts                  # sfc32 deterministic PRNG — the ONLY sanctioned randomness
+│                                    #   source for sim code; Math.random banned there. Currently
+│                                    #   used by TerrainGenerator for plateau/region-mask site
+│                                    #   selection (pulled forward from Phase 3 for determinism).
 └── engine/
-    ├── Game.ts                         # Orchestrator only — scene, renderer, loop, system wiring
+    ├── Game.ts                     # Orchestrator — scene, renderer, EffectComposer (bloom/tonemap/
+    │                                #   grading pipeline), loop, system wiring
     │
-    ├── config/                         # One file per domain — add new ones as phases grow
-    │   ├── TerrainConfig.ts            # GridParameters, TerrainParameters, CoordinateMarkerParameters,
-    │   │                               #   EdgeColorLayer interface, EdgeParameters
-    │   ├── LightingConfig.ts           # LightingParameters, ReflectionParameters
-    │   └── CameraConfig.ts             # CameraParameters
+    ├── config/
+    │   ├── TerrainConfig.ts        # GridParameters, TerrainParameters, BuildingFootprints,
+    │   │                           #   EdgeColorLayer interface, EdgeParameters
+    │   ├── LightingConfig.ts       # LightingParameters, ReflectionParameters
+    │   └── CameraConfig.ts         # CameraParameters (now actually wired into Game.ts)
     │
     ├── terrain/
-    │   ├── TerrainGenerator.ts         # Heightmap generation loop, buffer management, update tick
-    │   ├── TerrainMaterial.ts          # Reflection + panel shader (onBeforeCompile factory)
-    │   ├── EdgeMaterial.ts             # 5-layer colour ramp + electric pulse shader (factory + EdgeUniforms)
-    │   ├── HeightMap.ts                # Retained height data; all spatial queries for gameplay systems
-    │   ├── GridSystem.ts               # World grid parameters + observer pattern
-    │   └── LightingSystem.ts           # Sun, sky, halo, day/night cycle (singleton)
+    │   ├── TerrainGenerator.ts     # Heightmap generation loop, plateau + region-mask logic, buffer
+    │   │                           #   management, update tick, presets (TerrainPresets export)
+    │   ├── TerrainGrid.ts          # THE terrain grid — one geometry, feeds EdgeMaterial for the
+    │   │                           #   visual (replaces old EdgesGeometry approach entirely) AND
+    │   │                           #   the buildability data (isFootprintBuildable) for placement
+    │   ├── TerrainMaterial.ts      # Reflection + panel shader (onBeforeCompile factory)
+    │   ├── EdgeMaterial.ts         # 5-layer colour ramp + electric pulse shader (factory + EdgeUniforms)
+    │   ├── HeightMap.ts            # Retained height data; spatial queries incl. isInBounds/isBuildable
+    │   ├── GridSystem.ts           # World grid parameters + world↔cell conversion + observer pattern
+    │   └── LightingSystem.ts       # Sun (flat billboarded circle + scanlines), sky, halo, day/night (singleton)
     │
     ├── ui/
-    │   ├── TerrainControls.ts          # Terrain shape sliders + Regenerate (top-left)
-    │   ├── EdgeControls.ts             # Grid colour layers + pulse sliders (beside terrain panel)
-    │   └── ReflectionControls.ts       # Terrain/sun reflection params (top-right)
+    │   ├── TerrainControls.ts      # Shape/Regions/Valley/Plateau sliders + Presets + Regenerate
+    │   ├── EdgeControls.ts         # Grid colour layers + pulse sliders
+    │   ├── ReflectionControls.ts   # Terrain/sun reflection params (Position Factor min is 0.1, not
+    │   │                           #   0 — see Do Not Touch)
+    │   └── SettingsIO.ts           # Save/load the whole tunable scene as one JSON blob (bottom-right
+    │                               #   panel) — bundles each panel's own exportSettings()/
+    │                               #   importSettings(). Textarea + best-effort clipboard write.
     │
     ├── debug/
-    │   └── PerformanceMonitor.ts       # FPS, frame time, draw calls, memory overlay (singleton)
+    │   └── PerformanceMonitor.ts   # FPS, frame time, draw calls, memory overlay (singleton)
     │
     ├── utils/
-    │   ├── BufferPool.ts               # Singleton memory pool for geometry buffers
-    │   ├── NoiseSampler.ts             # FastNoiseLite wrapper: baseFBm + peakRidged + domain warp
+    │   ├── BufferPool.ts           # Singleton memory pool for geometry buffers
+    │   ├── NoiseSampler.ts         # FastNoiseLite wrapper: baseFBm + peakRidged + domain warp + regionMask
     │   └── fastnoise-lite.d.ts
     │
-    ├── units/                          # Phase 3 — empty, ready
-    ├── movement/                       # Phase 3 — empty, ready
-    ├── combat/                         # Phase 4 — empty, ready
-    ├── resources/                      # Phase 5 — empty, ready
-    ├── buildings/                      # Phase 6 — empty, ready
-    └── ai/                             # Phase 7 — empty, ready
+    ├── units/ movement/ combat/ resources/ buildings/ ai/   # DELETED — empty, untracked, wrong
+    │                                                          # tree. Gameplay is sim-side by the
+    │                                                          # new architecture rules (src/sim/).
+    │                                                          # These materialise there when built.
+```
+(`src/types/postprocessing.d.ts` — deleted; was a stale stub shadowing the real package's own types.)
 
+```
 public/
 ├── noise-visualizer.html               # Standalone noise debug tool — /noise-visualizer.html
 └── FastNoiseLite.js                    # fastnoise-lite copy for visualizer
 ```
 
 ### World Dimensions
-- Grid: 100 divisions × 64 units/cell = **8,000 × 8,000** world units
-- Render mesh: 200 segments × 40 world units/vertex = 8,000 (higher density than nav grid)
+- Total size: **8,000 × 8,000** world units, `GridParameters.CELL_SIZE = 64`
+- **Render mesh divisions = grid cell count (125), deliberately equal** — 1 mesh quad = 1 grid cell exactly, so `TerrainGrid.ts`'s lines sit on real mesh vertices with zero approximation gap. (Was 200 divisions/40-unit segments, denser than the grid — that mismatch was the root cause of the grid/terrain-tile misalignment bug fixed this session. Don't decouple these again without a good reason.)
 - Terrain height: 0–1400 units default (`HEIGHT_SCALE` in `TerrainConfig`)
-- Camera starts at (4000, 3000, 4000), looking at origin
+- Camera starts at (4000, 3000, 4000), looking at origin, far clip 500000 (see `CameraConfig.ts` comment for why — LightingSystem's sky/halo geometry needs the headroom)
 - Orbit range: 100–16,000 units
+- Building footprints: `BuildingFootprints.SMALL/MEDIUM/LARGE` = 1/2/3 grid cells = 64/128/192 world units (convention only — no real buildings yet)
 
 ## What's Working
-- ✅ Procedural terrain — FastNoiseLite OpenSimplex2S (no lattice star artifact)
-- ✅ Domain warping breaks simplex symmetry — varied topology per seed
-- ✅ Ridged multifractal peak layer — sharp connected mountain chains
-- ✅ Dynamic lighting system (sun orbit, sky gradient, halo, sunrise/sunset)
-- ✅ Terrain reflection shader (panel effect, metalness/roughness by sun angle/height/view)
-- ✅ Edge grid shader — 5-layer GPU height-ramp + animated electric pulse (AdditiveBlending neon glow)
-- ✅ EdgeControls panel — live colour pickers, height % and intensity per layer, pulse speed/intensity/width
-- ✅ OrbitControls camera (pan, zoom, rotate with damping)
-- ✅ TerrainControls — height, persistence, base/peak blend, frequencies, warp, peak threshold, octaves, valley
-- ✅ Valley carving — Gaussian mask along X axis
-- ✅ Noise visualiser at `/noise-visualizer.html` — 6-panel live debug tool
-- ✅ Performance monitor overlay
-- ✅ Buffer pooling
-- ✅ HeightMap — bilinear height query, surface normals, slope angle, traversability, ground orientation (slope-tilt + heading), flying altitude
+- ✅ Procedural terrain — FastNoiseLite OpenSimplex2S, domain-warped, ridged peaks
+- ✅ **Region-masked flatland/mountain zoning** — large-scale low-frequency noise creates coherent flat regions (smooth, minor variation) with mountains rising out of them, instead of uniform ruggedness everywhere. Verified with a standalone noise sweep (not just theorized): clean, large, coherent zones. On by default (`regionMaskEnabled`), off in the Rolling preset.
+- ✅ **Plateau build-sites** — deterministic (seeded `Rng`) flat circular sites for future base-building, `TerrainControls` sliders (Count/Radius/Edge Sharpness), returned via `getPlateauSites()`
+- ✅ **Unified terrain grid** (`TerrainGrid.ts`) — one grid geometry drives both the neon visual (fed into the existing `EdgeMaterial` shader) and gameplay buildability (`isFootprintBuildable`) — not two mismatched systems
+- ✅ Dynamic lighting — sun (flat billboarded circle, not a sphere — see below), sky gradient, halo, retro scanline bands on the sun's upper half, day/night
+- ✅ Terrain reflection shader — tinted by the sun's actual live colour now (was hardcoded near-white)
+- ✅ Edge grid shader — 5-layer GPU height-ramp (synthwave: navy→purple→pink→orange, no cyan) + animated electric pulse
+- ✅ Bloom/tone-mapping/grading pipeline (`postprocessing` package) — HDR buffer, ACES tone mapping, brightness/contrast + vignette grading pass
+- ✅ HeightMap — bilinear height query, surface normals, slope, traversability, ground orientation, flying altitude, `isInBounds`, `isBuildable`
+- ✅ Terrain presets — `PRESET_DRAMATIC` / `PRESET_ROLLING` / `PRESET_BATTLEFIELD`
+- ✅ OrbitControls camera, TerrainControls (full shape/region/valley/plateau exposure), EdgeControls, ReflectionControls
+- ✅ **Save/load settings** (`SettingsIO.ts`) — Export writes the whole scene (terrain shape, seed, grid colours/pulse, reflection/sun) as JSON into a textarea + best-effort clipboard copy; paste JSON back + Import restores it exactly, including the seed (regenerates with the SAVED seed, not a new random one)
+- ✅ Noise visualiser at `/noise-visualizer.html`, performance monitor, buffer pooling
 
 ## What's NOT Implemented (yet)
 - ❌ Units, combat, projectiles
 - ❌ Resource system (Skirulum, Vlux, Fredalite, Scrap)
 - ❌ Buildings / production / AI / minimap
-- ⚠️ postprocessing: imported, not wired
+- ❌ Any sim layer beyond `sim/core/Rng.ts` — no ticks, no commands, no determinism harness yet (Phase 3)
 
 ## Active Tuning Notes (review at session start)
 
-### Edge Grid — known things to revisit
-**Colour layer tuning (EdgeControls panel, live — no regen):**
-- Layer 1 intensity 0.00 + black = invisible low ground (good for dark dramatic look)
-- Layer 3 (orange ~0.38) + intensity 0.9 = mid-height glow
-- Layer 5 (cyan ~0.82) + intensity 3.0+ = electric neon peaks
-- All intensity values above 1.0 are HDR — with AdditiveBlending they genuinely over-expose and glow
-- Try: layers 1–2 at 0 intensity (dark), layer 3 at 0.5, layer 4 at 1.5, layer 5 at 5–8 for dramatic peak-only glow
+### Sun (LightingSystem.ts) — known things to revisit
+- Sun is a **flat billboarded `CircleGeometry`**, not a sphere — deliberate. A 3D sphere's surface has real depth (bulges toward camera), so under perspective projection any pattern on it (scanlines, colour bands) still curves slightly even when built from "flat" 3D quantities. A flat billboard (same technique as the halo) has none of that. If the sun ever needs to go back to a sphere for some 3D-lighting reason, expect scanlines/gradient to need rework.
+- Scanlines: upper half only, fade in via `smoothstep(0.0, 0.18, upperT)` from the equator (a hard on/off switch there read as lines abruptly stopping). Density/thickness: packed tight + thick near the equator, sparse + thin near the pole (`pow(upperT, 0.4)` warp).
+- Minimum sun position was computed, not guessed: at its lowest setting the sun used to sit at **world Y=-865 — below the horizon plane**. Fixed via the hardcoded `minAngle` constant in `updateSunPosition()` (now gives Y=+350). If `SUN_MIN_HEIGHT`/`SUN_MAX_HEIGHT` config values are ever changed expecting the sun's vertical range to move, note that those only affect the *normalization* of the height slider — the actual min/max angle constants are separate hardcoded values in the same method and don't derive from that config.
+- `SUN_TERRAIN_LIGHT_SCALE` (LightingConfig) decouples the sun's own visual brightness (disc/halo opacity) from how much light it actually casts on terrain — these used to be the same number by coincidence, not design. Also: the "Sun Intensity" slider's effect on terrain lighting is dead code in practice (an early assignment in `updateSunPosition()` gets overwritten later in the same method by a purely elevation-based calculation) — only sun height/elevation actually drives terrain light intensity.
 
-**Pulse tuning:**
-- `pulseSpeed` 0.0 = frozen static glow, 0.5+ = rapid electricity
-- `pulseWidth` 0.02–0.04 = tight sharp zips; 0.15+ = slow rolling wave
-- `pulseIntensity` controls brightness of pulse head — 5–12 range for neon effect
-- Three simultaneous pulses run at different speeds (×0.61, ×0.37 multiples) with per-edge hash offsets — they don't synchronise
-- Pulse colour: warm orange-white at low heights, cool cyan at peaks — adjust in `computePulse()` in `EdgeMaterial.ts`
+### Reflection shader (TerrainMaterial.ts) — known things to revisit
+- `calculateReflection()`'s `reflectionStrength` is now `clamp()`-ed to `[0,1]` — it used to be unclamped and routinely exceeded 1.0 (measured ~91% of realistic viewing angles before the fix), which fed three separate `mix()` calls as an unclamped blend factor and caused extrapolation artifacts (negative roughness, metalness >1, blown-out colour). This was the actual root cause of a "way too bright/shiny" complaint that survived several rounds of tuning metalness/roughness/sun — those inputs were being blown past, not respected. If reflections ever look broken again, check this clamp survived before re-tuning weights.
+- `smoothstep(0.0, max(0.001, reflectionParams.z), ...)` — the `max()` guard matters. `reflectionParams.z` (Position Factor) reaching exactly 0 is undefined GLSL behaviour (`smoothstep` divide-by-zero) and produced a NaN/white-blowout bug. The UI slider's own minimum is also raised to 0.1 for the same reason — don't lower it back to 0.
+- `ReflectionParameters` weights are data-driven, not guessed — simulated the exact shader formula in Node across 100k random viewing angles to pick values. If retuning "how shiny," rerun that kind of sweep rather than eyeballing — the relationship between weight and visible saturation is non-linear (a 1.5x weight bump roughly doubled average reflection strength).
+- `sunColor` uniform now tracks `LightingSystem.getSunColor()` live (pushed each frame in `TerrainGenerator.update()`) instead of a hardcoded near-white — reflections tint with the sun's actual current colour.
+
+### Edge Grid — known things to revisit
+- Colour ramp is now navy→indigo→purple→pink→orange (low→high) — no cyan. Intensities roughly doubled from the original synthwave pass for more bloom headroom (peak layer is 5.0 now). Pulse: purple at low heights → orange at peaks, intensity 7.0.
+- All still live-tunable in the EdgeControls colour pickers/pulse sliders — the above are just starting defaults.
+- The previously-documented "edgeUniforms lost on regen" bug does **not reproduce** — traced it: `EdgeParameters` is a persistent mutated module singleton, always re-read fresh by `createEdgeMaterial()` on every regen. Confirmed via two independent code-read passes. Don't re-investigate from scratch if it comes up again — it's not there.
 
 ### Terrain noise — known things to revisit
-- `baseFrequency` 0.0004 = large rolling hills. Lower = bigger features, higher = more hills per map.
-- `peakFrequency` 0.0008 = ridge scale. Can go higher for more fractured ridgelines.
-- `warpAmplitude` 350 = strong twist. Set to 0 to see unwarped noise for comparison.
-- `peakThreshold` 0.40 = ~60% of map is mountains. Raise to 0.6 for sparse isolated peaks.
-- `persistence` affects both layers via SetFractalGain — lower (0.3) = smooth rounded, higher (0.7) = rough/jagged.
+- `baseFrequency` 0.0004 = large rolling hills. `peakFrequency` 0.0008 = ridge scale. `warpAmplitude` 350 = strong twist. `peakThreshold` 0.40. `persistence` — lower (0.3) = smooth rounded, higher (0.7) = rough/jagged.
+- `regionMaskFrequency` 0.00004 default — much lower than base/peak, by design (big coherent zones, not detail). `regionFlatAmplitude` 0.18 (residual bumpiness in flatland), `regionMountainAmplitude` 1.0.
 
-## Remaining Terrain Tasks (Phase 2)
+## Remaining Terrain Tasks (Phase 2 tail — optional polish, not blocking Phase 3)
+- ⬜ Organic valley/river carving — still a straight Gaussian-mask corridor. Try domain-warping the valley mask's X coordinate first (cheap, reuses existing warp data).
+- ⬜ `ReflectionControls.ts` import — two lines from `LightingConfig`, could be one. Cosmetic, still open.
 
-### Known bug
-- When terrain is regenerated, `edgeUniforms` is rebuilt from `EdgeParameters` defaults, so any live EdgeControls changes are lost.
-- **Fix:** in `TerrainGenerator.regenerate()`, copy live uniform values back into `EdgeParameters` before calling `generate()`, or pass the previous uniforms into `createEdgeMaterial()` as optional overrides.
-
-### Organic valley / river erosion
-Currently valley carving uses a **Gaussian mask on the X axis** — straight corridor, looks artificial.
-
-**Option C — Domain-warped valley mask** ← try first (2–3 lines in `generate()`)
-Apply the existing domain warp to the valley mask's X coordinate before evaluating:
-- Very low effort, reuses existing warp data, creates a winding valley.
-
-**Option A — Meandering path** ← if C feels too symmetrical
-Random walk centreline from one edge to the other, Gaussian cross-section carved along it.
-Complexity: medium. No shader changes.
-
-**Option B — Hydraulic erosion** ← long-term gold standard
-CPU particle simulation post-process on the height buffer before mesh generation.
-Reference: Sebastian Lague "Procedural Landmass Generation" (hydraulic erosion episode).
-
-### Terrain presets
-Lock in 2–3 good named configs (e.g. `PRESET_DRAMATIC`, `PRESET_ROLLING`, `PRESET_ARCHIPELAGO`) in `TerrainConfig.ts` so sessions don't start from scratch tuning.
-
-## Remaining Refactoring Tasks
-
-### Small / safe
-- ✅ ~~Delete `ShaderManager.ts` + unused `skybox`/`sunHalo` shaders~~ — done 10 Aug 2026
-- **Split `ReflectionControls.ts` import** — currently imports both `ReflectionParameters` and `LightingParameters` on two lines; could be one `import { ..., ... } from '../config/LightingConfig'` (cosmetic). Still open post-config-split — verify on next touch of that file.
-
-### Before Phase 3 (must-do)
-- **InstancedMesh unit renderer architecture** — design `UnitRenderer.ts` in `units/` before writing any unit code. Retrofitting instancing after units exist is painful. Decide: one `InstancedMesh` per unit type, synced each frame from `UnitManager`.
-- **NavigationGrid** — build `movement/NavigationGrid.ts` fed by `HeightMap.getSlopeAngle()`. Current CELL_SIZE=64 world units is reasonable; render mesh vertex spacing is 40 — nav grid is coarser than render mesh, which is correct. Decide cell resolution before writing pathfinding.
-
-## Do Not Touch
-- `TerrainMaterial.ts` / `EdgeMaterial.ts` — fragile shader injection via `onBeforeCompile`; reflection and edge systems depend on precise uniform setup and injection order
-- `LightingSystem.ts` — carefully tuned; colour transitions are parameter-driven
+## Do Not Touch (but see below — surgical numeric/defensive fixes are fine)
+- `TerrainMaterial.ts` / `EdgeMaterial.ts` — fragile shader injection via `onBeforeCompile`; reflection and edge systems depend on precise uniform setup and injection order. **This means don't restructure the injection wiring or `#include` target strings without understanding them** — it does NOT mean the files are frozen. This session made several narrow, single-expression fixes here (a `max()` guard, `max`→`clamp`, a colour-tint uniform hookup) without incident. The bar: does the change touch WHAT gets matched/replaced and in what order, or just a constant/expression value within an already-matched block? The former needs care; the latter is normal maintenance.
+- `LightingSystem.ts` — carefully tuned; colour transitions are parameter-driven. Same caveat as above — this session changed the sun's geometry type, added scanline shader code, and fixed a genuine below-horizon position bug, all as targeted edits.
 - `BufferPool.ts` — used by TerrainGenerator; changes risk memory leaks
 - `index.ts` — must remain a pure re-export with NO side effects (instantiating Game here caused the dual-instance bug)
 
 ## Singleton Rules
 - `LightingSystem` and `PerformanceMonitor` are singletons — always use `getInstance()`, never `new` directly
 - Both clear static instance in `dispose()` so HMR creates a fresh instance correctly
-- `Game.dispose()` stops animate() loop (`disposed` flag), removes resize listener, disposes all singletons in order
+- `Game.dispose()` stops animate() loop (`disposed` flag), removes resize listener, disposes composer + all singletons in order
 
 ## HeightMap API (src/engine/terrain/HeightMap.ts)
-All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Available after first `generate()`, replaced on each `regenerate()`.
+All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Available after first `generate()`, replaced on each `regenerate()` — **no change notification**, don't cache the reference across a regen.
 
 | Method | Returns | Use for |
 |---|---|---|
@@ -171,11 +161,15 @@ All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Ava
 | `getNormalAt(x, z)` | `Vector3` | Surface direction at a point |
 | `getSlopeAngle(x, z)` | `number` (radians) | Traversability gate (0=flat, PI/2=cliff) |
 | `isTraversable(x, z, maxSlope)` | `boolean` | Pathfinding walkability |
+| `isInBounds(x, z)` | `boolean` | Distinguish "edge of map" from "off the map" (other queries clamp silently) |
+| `isBuildable(x, z, footprintRadius, maxSlopeRad?)` | `boolean` | Placement check — stricter default slope tolerance than traversability |
 | `getGroundedPosition(x, z)` | `Vector3` | Exact world pos on terrain surface |
 | `getGroundOrientation(x, z, facingAngle)` | `Quaternion` | Unit tilt + heading combined |
 | `getFlyingY(x, z, targetAlt, minClearance)` | `number` | Flying unit Y above terrain |
 
 `getGroundOrientation` combines a slope-tilt quaternion (`up → surfaceNormal`) with a heading yaw. Units on slopes visually angle with the ground; flying units use `getFlyingY` to stay clear of peaks.
+
+`GridSystem` also now has `worldToCell/cellToWorld/cellCenterWorld/getCellCount` — the logical placement grid, same cells `TerrainGrid.ts` draws.
 
 ## Development Commands
 ```bash
@@ -183,39 +177,28 @@ npm install       # First time setup
 npm start         # Webpack dev server — game at http://localhost:9000
                   # Noise visualiser at http://localhost:9000/noise-visualizer.html
 npm run build     # Production bundle → public/bundle.js
+npx tsc --noEmit -p tsconfig.json   # Typecheck only (no test/lint scripts exist yet — Phase 3 chore)
 ```
 
 ## Phase Plan
+Full detail (architecture rules, exact contracts, ported-code mapping, risks) in the external plan file — see `## Current Status` above for its path. Condensed here so it survives even if that file doesn't.
+
+**Locked decisions:** multiplayer is a hard goal (lockstep-grade determinism from day 1: fixed tick, seeded RNG, commands, per-tick checksums — netcode itself deferred to Phase 7); design for 300+ units (SoA typed arrays, InstancedMesh); Milestone 1 = combat sandbox (two teams fighting, not menus/economy first).
+
+**Architecture rules for all of it:** `src/sim/` imports nothing from `engine/`/`game/`, no Three.js, no DOM — sim state advances only in fixed ticks via Commands; selection/camera/UI are client-local, never simmed; sim time is an integer tick, never wall-clock; all sim randomness via the seeded `Rng` (`Math.random` banned in `sim/`); `Math.sin/cos/tan/atan2/exp/log/pow` banned in sim (cross-engine nondeterministic) — use polynomial approximations.
 
 ### Phase 1 — Stabilise ✅ DONE
-
-### Phase 2 — Terrain Improvement ⚠️ IN PROGRESS
-**Done:**
-- ✅ TerrainControls UI with full noise parameter exposure
-- ✅ EdgeControls UI with 5-layer colour ramp + animated electric pulse
-- ✅ Replaced SimplexNoise with FastNoiseLite (OpenSimplex2S + domain warp)
-- ✅ Map doubled to 8000×8000
-- ✅ Noise visualiser tool
-- ✅ HeightMap — retained spatial query API for all gameplay systems
-- ✅ Source refactor — TerrainGenerator halved (766→348 lines); TerrainMaterial + EdgeMaterial extracted; GameParameters split into TerrainConfig / LightingConfig / CameraConfig; stub folders for all future phases
-
-**Remaining:**
-- ⬜ Fix edgeUniforms lost on regen bug (see above)
-- ⬜ Organic valley/river carving — try Option C first
-- ⬜ Lock in named terrain presets
-
-### Phase 3 — Add Units
-Pre-requisite architecture in place:
-- ✅ HeightMap spatial queries (height, slope, orientation, fly altitude)
-- ✅ Folder structure (`units/`, `movement/`)
-- ⬜ Design InstancedMesh renderer before writing Unit code
-- ⬜ NavigationGrid from HeightMap slope data
-- Unit class, UnitManager, click-to-select, right-click-to-move, health bar
-
-### Phase 4 — Combat
-### Phase 5 — Resource System (Skirulum, Vlux, Fredalite, Scrap)
-### Phase 6 — Buildings & Production
-### Phase 7 — AI & Polish
+### Phase 2 — Terrain ✅ DONE (tail items above are optional polish)
+### Phase 3 — Sim foundation & determinism harness
+Folder restructure into `src/sim/{core,terrain,config,units,movement,combat}`; extract pure `HeightFieldGen` from `TerrainGenerator`; `SimConfig`/`DetMath`/`Checksum`/`commands`/`CommandQueue`/`SimEvents`/`ReplayLog`/`UnitStore`; accumulator loop replacing the current variable-delta rAF; vitest + boundary tests + determinism test. **Exit:** two headless 1,000-tick runs produce identical checksum streams.
+### Phase 4 — Selection & movement
+Picking, client-local selection, InputManager (ported from `3b6eeea`), NavGrid + A* behind a swappable `PathPlan` (flow-field-ready), formations. **Exit:** 200 units box-selected and moved at 60fps, determinism suite stays green.
+### Phase 5 — Combat sandbox = MILESTONE 1
+Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal, `MatchSession`. **Exit:** 100v100 fight to elimination at 60fps; recorded replay re-runs headless to an identical checksum.
+### Phase 6 — Sim hardening (save/replay/cross-browser determinism)
+### Phase 7 — Multiplayer lockstep
+### Phase 8 — Economy/buildings/production
+### Phase 9 — AI & polish
 
 ## Session Log
 | Date | What Was Done |
@@ -224,13 +207,10 @@ Pre-requisite architecture in place:
 | Mar 2025 | Bloom, edge detection, visual polish (feature/tron-aesthetic) |
 | Mar–Apr 2025 | Terrain rebuild, lighting, buffer pooling, performance monitor |
 | 28 Mar 2026 | Promoted to main; TerrainControls UI, valley carving, tuned defaults |
-| 29 Mar 2026 | Architecture audit; LightingSystem/PerformanceMonitor dispose fix; Game disposed flag; resize listener fix |
-| 29 Mar 2026 | Fixed dual Game instance bug (index.ts side effect). Fixed vertex colour normalisation. HMR cleanup in main.ts. |
-| 29 Mar 2026 | Replaced SimplexNoise with FastNoiseLite (OpenSimplex2S + ridged peaks + domain warp). Full noise param exposure in TerrainControls. Noise visualiser at /noise-visualizer.html. |
-| 29 Mar 2026 | Doubled map to 8000×8000. Edge grid replaced with GPU shader: 5-layer height colour ramp + animated electric pulse (3 overlapping pulses, per-edge hash offset, AdditiveBlending neon glow). EdgeControls live debug panel. |
-| 01 Apr 2026 | Added HeightMap (terrain/HeightMap.ts): retained height data, bilinear queries, surface normals, slope, traversability, ground orientation (slope-tilt + heading), flying altitude. TerrainGenerator.getHeightMap() exposes to all gameplay systems. |
-| 01 Apr 2026 | Source refactor: TerrainGenerator 766→348 lines; TerrainMaterial.ts + EdgeMaterial.ts extracted (shader logic unchanged); GameParameters.ts split into TerrainConfig/LightingConfig/CameraConfig; dead coordinate-marker code removed; stub folders created for units/movement/combat/resources/buildings/ai. |
-| 10 Aug 2026 | Resumed after break. Verified branch history (reflog + merge-base) — confirmed the 01 Apr refactor was uncommitted-but-legitimate work on top of `main`, not a stray branch. Committed it (build + `tsc --noEmit` both clean). Deleted legacy `ShaderManager.ts` + unused `skybox`/`sunHalo` shader files (confirmed zero references first). Untracked `public/bundle.js` (was tracked before it got gitignored). Pruned 6 stale branches, local + remote (`old-main`, `backup/debug-ui-wip`, `feature/tron-aesthetic`, `main-28-03-26`, `state-machine-implementation`, `terrain-rebuild`) — all fully merged into `main`, verified with `git merge-base --is-ancestor`. Repo now has a single branch: `main`. |
+| 29 Mar 2026 | Architecture audit; dispose fixes; dual Game instance bug fix; FastNoiseLite swap; 8000×8000 map; edge grid GPU shader |
+| 01 Apr 2026 | HeightMap added; source refactor (TerrainGenerator 766→348 lines, material files extracted, config split, stub folders) |
+| 10 Aug 2026 | Resumed after break. Verified branch history, committed the 01 Apr refactor, deleted legacy ShaderManager, pruned 6 stale branches down to just `main`. |
+| 10-11 Aug 2026 | **Big session.** Explored old combat code (`3b6eeea`) + current engine, wrote a full game-sim architecture plan (multiplayer-first, deterministic, SoA units) — see Phase Plan above. Then finished Phase 2: seed expose + `newRandomSeed()`, plateau build-sites (deterministic via new `sim/core/Rng.ts`), `HeightMap.isBuildable`/`isInBounds`, terrain presets. User flagged the grid didn't match the terrain visually — root-caused to `EdgesGeometry` never having been a real grid (curvature-triggered, not cell-aligned); replaced with `TerrainGrid.ts` (one geometry, feeds both the neon visual and buildability data) and matched render-mesh resolution to grid resolution exactly (125 divisions, was 200) — verified region-mask noise output directly (Node) to confirm coherent zones, not guessed. Then a full visual pass: synthwave palette (navy→purple→pink→orange, dropped cyan), bloom pipeline (`postprocessing` package, ACES tonemapping moved off the renderer per its docs), found and fixed a genuine shader bug (`reflectionStrength` unclamped, ~91% of angles overshot 1.0 — root cause of a "too bright" complaint that survived several tuning rounds), a `smoothstep` NaN bug (Position Factor at 0), sun rework (flat billboarded circle instead of a sphere — fixes perspective-curved scanlines, computed the minimum sun position was literally below the horizon and fixed it, wired the reflection tint to the sun's live colour instead of a hardcoded near-white). Also hit and resolved a live OneDrive `node_modules` sync-lag (transient, matches the known project issue) and a stale local `postprocessing.d.ts` type stub that was shadowing the real package's types. Finally: user hand-tuned a scene and asked to bake it in as the new defaults — read every slider off a screenshot and applied them (`TerrainGenerator.config`, `EdgeParameters`, `ReflectionParameters.REFLECTION_PARAMS`, `SUN_BASE_INTENSITY`, initial sun height), except 4 values genuinely unreadable (tiny-magnitude sliders were displaying "0.00" — fixed that display bug, `displayDecimals()` in TerrainControls.ts, rather than guess). Built the save/load settings feature this exposed a need for (`SettingsIO.ts` + `exportSettings()`/`importSettings()` on all three panels) — found and fixed two more real bugs along the way: Sun Height slider always displayed a hardcoded 0.5 regardless of the actual value (added `LightingSystem.getTargetSunHeight()`, fixed init order in `Game.ts` — `setSunHeight()` now runs before the panel that reads it), and a settings import would have silently discarded the saved seed (`TerrainControls.importSettings()` was calling regenerate-with-new-seed). |
 
 ---
 *Update this file at the end of every coding session.*
