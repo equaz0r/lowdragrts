@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GridParameters } from '../config/GameParameters';
+import { GridParameters } from '../config/TerrainConfig';
 
 export type GridChangeType = 'size' | 'divisions' | 'cellSize' | 'totalSize';
 

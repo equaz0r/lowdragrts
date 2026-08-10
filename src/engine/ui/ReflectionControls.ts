@@ -1,5 +1,6 @@
 import { Vector4 } from 'three';
-import { ReflectionParameters, LightingParameters } from '../config/GameParameters';
+import { ReflectionParameters } from '../config/LightingConfig';
+import { LightingParameters } from '../config/LightingConfig';
 import { LightingSystem } from '../terrain/LightingSystem';
 
 export class ReflectionControls {

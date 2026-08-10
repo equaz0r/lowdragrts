@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
-import { EdgeParameters } from '../config/GameParameters';
+import { EdgeParameters } from '../config/TerrainConfig';
 
 /**
  * Debug panel for live-editing the edge colour layers and pulse animation.

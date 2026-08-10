@@ -1,64 +1,73 @@
 # Project: LowDrag RTS
 
 ## What This Is
-A voxel-based real-time strategy game inspired by Total Annihilation. Built with TypeScript, Three.js, and Webpack. Rendered in the browser. Hobby project — worked on in sessions when time allows.
+A heightmap-based real-time strategy game inspired by Total Annihilation. Built with TypeScript, Three.js, and Webpack. Rendered in the browser. Hobby project — worked on in sessions when time allows.
 
 ## Current Status
 ✅ **Compiles cleanly. Builds successfully. No TypeScript errors.**
 
-This branch (`main`) is a **terrain/rendering/engine branch**. It does NOT contain units, combat, projectiles, or a resource system. The focus is the visual engine — terrain, lighting, reflections, edge grid effects and performance.
+This branch (`main`) is the **terrain/rendering/engine branch**. No units, combat, projectiles, or resources yet. Focus is the visual engine and pre-Phase-3 gameplay architecture.
 
-The `old-main` branch on GitHub contains the combat and unit code if needed for reference.
+The `old-main` branch on GitHub contains the old combat and unit code for reference.
 
 ## Tech Stack
 - **TypeScript** (strict mode, ES6 target)
 - **Three.js** (3D rendering)
 - **Webpack 5** (bundler + dev server)
-- **fastnoise-lite** (procedural terrain — OpenSimplex2S + domain warp, replaces old simplex-noise)
+- **fastnoise-lite** (procedural terrain — OpenSimplex2S + domain warp)
 - **postprocessing** (loaded, not yet used)
 - **dat.gui** (loaded, not yet used)
 
-## Architecture
-
-### Entry Points
-- `src/main.ts` → single `new Game()` instance, HMR dispose hook
-- `src/index.ts` → re-exports `Game` only (NO side effects — critical, see Singleton Rules)
-- `src/engine/Game.ts` → main game class, creates scene/camera/renderer, runs loop
-
-### Key Directories & Files
+## Source Structure
 ```
 src/
-├── index.ts / main.ts              # Entry points
-├── engine/
-│   ├── Game.ts                     # Main game loop and system orchestration
-│   ├── config/
-│   │   └── GameParameters.ts       # ALL tunable parameters in one place
-│   ├── terrain/
-│   │   ├── TerrainGenerator.ts     # Procedural terrain mesh, shader injection, valley carving, edge shader
-│   │   ├── GridSystem.ts           # 8000-unit grid with observer pattern
-│   │   └── LightingSystem.ts       # Sun, sky, halo, day/night cycle
-│   ├── ui/
-│   │   ├── TerrainControls.ts      # Terrain shape sliders + Regenerate (top-left)
-│   │   ├── EdgeControls.ts         # Grid colour layer + pulse animation sliders (beside terrain panel)
-│   │   └── ReflectionControls.ts   # Terrain/sun reflection params (top-right)
-│   ├── debug/
-│   │   └── PerformanceMonitor.ts   # FPS, frame time, draw calls, memory overlay
-│   └── utils/
-│       ├── BufferPool.ts           # Singleton memory pool for geometry buffers
-│       ├── NoiseSampler.ts         # FastNoiseLite wrapper: baseFBm + peakRidged + domain warp
-│       └── fastnoise-lite.d.ts     # TypeScript declarations for fastnoise-lite
-└── types/
-    ├── postprocessing.d.ts
-    └── simplex-noise-esm.d.ts
+├── index.ts / main.ts
+└── engine/
+    ├── Game.ts                         # Orchestrator only — scene, renderer, loop, system wiring
+    │
+    ├── config/                         # One file per domain — add new ones as phases grow
+    │   ├── TerrainConfig.ts            # GridParameters, TerrainParameters, CoordinateMarkerParameters,
+    │   │                               #   EdgeColorLayer interface, EdgeParameters
+    │   ├── LightingConfig.ts           # LightingParameters, ReflectionParameters
+    │   └── CameraConfig.ts             # CameraParameters
+    │
+    ├── terrain/
+    │   ├── TerrainGenerator.ts         # Heightmap generation loop, buffer management, update tick
+    │   ├── TerrainMaterial.ts          # Reflection + panel shader (onBeforeCompile factory)
+    │   ├── EdgeMaterial.ts             # 5-layer colour ramp + electric pulse shader (factory + EdgeUniforms)
+    │   ├── HeightMap.ts                # Retained height data; all spatial queries for gameplay systems
+    │   ├── GridSystem.ts               # World grid parameters + observer pattern
+    │   └── LightingSystem.ts           # Sun, sky, halo, day/night cycle (singleton)
+    │
+    ├── ui/
+    │   ├── TerrainControls.ts          # Terrain shape sliders + Regenerate (top-left)
+    │   ├── EdgeControls.ts             # Grid colour layers + pulse sliders (beside terrain panel)
+    │   └── ReflectionControls.ts       # Terrain/sun reflection params (top-right)
+    │
+    ├── debug/
+    │   └── PerformanceMonitor.ts       # FPS, frame time, draw calls, memory overlay (singleton)
+    │
+    ├── utils/
+    │   ├── BufferPool.ts               # Singleton memory pool for geometry buffers
+    │   ├── NoiseSampler.ts             # FastNoiseLite wrapper: baseFBm + peakRidged + domain warp
+    │   └── fastnoise-lite.d.ts
+    │
+    ├── units/                          # Phase 3 — empty, ready
+    ├── movement/                       # Phase 3 — empty, ready
+    ├── combat/                         # Phase 4 — empty, ready
+    ├── resources/                      # Phase 5 — empty, ready
+    ├── buildings/                      # Phase 6 — empty, ready
+    └── ai/                             # Phase 7 — empty, ready
+
 public/
-├── noise-visualizer.html           # Standalone noise debug tool — open at /noise-visualizer.html
-│                                   # Mirrors NoiseSampler.ts exactly, all sliders live-update 6 panels
-└── FastNoiseLite.js                # Copy of node_modules/fastnoise-lite for visualizer (module import)
+├── noise-visualizer.html               # Standalone noise debug tool — /noise-visualizer.html
+└── FastNoiseLite.js                    # fastnoise-lite copy for visualizer
 ```
 
 ### World Dimensions
-- Grid: 100 divisions × 64 units/cell = **8,000 × 8,000** world units (doubled this session)
-- Terrain height: 0–1400 units default (HEIGHT_SCALE in TerrainConfig)
+- Grid: 100 divisions × 64 units/cell = **8,000 × 8,000** world units
+- Render mesh: 200 segments × 40 world units/vertex = 8,000 (higher density than nav grid)
+- Terrain height: 0–1400 units default (`HEIGHT_SCALE` in `TerrainConfig`)
 - Camera starts at (4000, 3000, 4000), looking at origin
 - Orbit range: 100–16,000 units
 
@@ -76,19 +85,18 @@ public/
 - ✅ Noise visualiser at `/noise-visualizer.html` — 6-panel live debug tool
 - ✅ Performance monitor overlay
 - ✅ Buffer pooling
+- ✅ HeightMap — bilinear height query, surface normals, slope angle, traversability, ground orientation (slope-tilt + heading), flying altitude
 
 ## What's NOT Implemented (yet)
 - ❌ Units, combat, projectiles
 - ❌ Resource system (Skirulum, Vlux, Fredalite, Scrap)
 - ❌ Buildings / production / AI / minimap
 - ⚠️ postprocessing: imported, not wired
-- ⚠️ ShaderManager.ts: legacy, superseded by onBeforeCompile injection
+- ⚠️ ShaderManager.ts: legacy, superseded by onBeforeCompile injection — can be deleted
 
 ## Active Tuning Notes (review at session start)
 
 ### Edge Grid — known things to revisit
-The electric pulse + 5-layer colour system is new and needs aesthetic tuning:
-
 **Colour layer tuning (EdgeControls panel, live — no regen):**
 - Layer 1 intensity 0.00 + black = invisible low ground (good for dark dramatic look)
 - Layer 3 (orange ~0.38) + intensity 0.9 = mid-height glow
@@ -101,10 +109,7 @@ The electric pulse + 5-layer colour system is new and needs aesthetic tuning:
 - `pulseWidth` 0.02–0.04 = tight sharp zips; 0.15+ = slow rolling wave
 - `pulseIntensity` controls brightness of pulse head — 5–12 range for neon effect
 - Three simultaneous pulses run at different speeds (×0.61, ×0.37 multiples) with per-edge hash offsets — they don't synchronise
-- Pulse colour: warm orange-white at low heights, cool cyan at peaks (hardcoded in shader, adjust in `computePulse()` in `createEdgeMaterial()`)
-
-**Known issue to fix next session:**
-- When terrain is regenerated, `edgeUniforms` is rebuilt from `EdgeParameters` defaults, so any live UI changes are lost. Consider copying live values back to `EdgeParameters` before regen, or preserving uniforms across regen.
+- Pulse colour: warm orange-white at low heights, cool cyan at peaks — adjust in `computePulse()` in `EdgeMaterial.ts`
 
 ### Terrain noise — known things to revisit
 - `baseFrequency` 0.0004 = large rolling hills. Lower = bigger features, higher = more hills per map.
@@ -113,51 +118,42 @@ The electric pulse + 5-layer colour system is new and needs aesthetic tuning:
 - `peakThreshold` 0.40 = ~60% of map is mountains. Raise to 0.6 for sparse isolated peaks.
 - `persistence` affects both layers via SetFractalGain — lower (0.3) = smooth rounded, higher (0.7) = rough/jagged.
 
-## Future Task: Organic Valley / River Erosion
-**Do not implement yet — design notes for next session.**
+## Remaining Terrain Tasks (Phase 2)
 
-Currently valley carving uses a **Gaussian mask on the X axis** — it creates a straight corridor through the map centre. This looks artificial.
+### Known bug
+- When terrain is regenerated, `edgeUniforms` is rebuilt from `EdgeParameters` defaults, so any live EdgeControls changes are lost.
+- **Fix:** in `TerrainGenerator.regenerate()`, copy live uniform values back into `EdgeParameters` before calling `generate()`, or pass the previous uniforms into `createEdgeMaterial()` as optional overrides.
 
-### Goal
-Replace or augment with valleys that look like **genuine river erosion** — winding channels, tributary branches, widening toward lowland, narrowing at headwaters.
+### Organic valley / river erosion
+Currently valley carving uses a **Gaussian mask on the X axis** — straight corridor, looks artificial.
 
-### Approaches to consider
+**Option C — Domain-warped valley mask** ← try first (2–3 lines in `generate()`)
+Apply the existing domain warp to the valley mask's X coordinate before evaluating:
+- Very low effort, reuses existing warp data, creates a winding valley.
 
-**Option A — Meandering path (recommended starting point)**
-Generate a river centreline using a random walk or spline with controlled curvature:
-1. Start at one map edge, end at the other (or coast)
-2. At each step, add a small random lateral displacement biased toward lower terrain
-3. Carve a Gaussian cross-section (width/depth varying along path — narrow at source, wide at mouth)
-4. Can add tributaries by branching the walk at random points
-- Complexity: medium. Fully in CPU terrain generation, no shader changes.
+**Option A — Meandering path** ← if C feels too symmetrical
+Random walk centreline from one edge to the other, Gaussian cross-section carved along it.
+Complexity: medium. No shader changes.
 
-**Option B — Hydraulic erosion simulation**
-Run a simplified water particle simulation over the generated heightmap:
-1. Drop thousands of particles at random high points
-2. Each particle moves downhill, carries sediment, deposits on flat areas
-3. After N iterations the terrain has natural channels, alluvial fans, delta plains
-- Complexity: high, but produces the most realistic result
-- Reference: Sebastian Lague "Procedural Landmass Generation" series (hydraulic erosion episode)
-- Can be CPU-side as a post-process on the height buffer before mesh generation
+**Option B — Hydraulic erosion** ← long-term gold standard
+CPU particle simulation post-process on the height buffer before mesh generation.
+Reference: Sebastian Lague "Procedural Landmass Generation" (hydraulic erosion episode).
 
-**Option C — Domain-warped valley mask**
-Apply the existing domain warp to the valley Gaussian mask coordinates before evaluating:
-- The mask currently uses raw X position; warp it with the same warpX/warpZ samplers used for terrain
-- Very low effort change (2–3 lines in `generate()`)
-- Creates a winding valley that follows the existing terrain warp — organic feel with minimal code
-- Good first step before investing in Option A or B
+### Terrain presets
+Lock in 2–3 good named configs (e.g. `PRESET_DRAMATIC`, `PRESET_ROLLING`, `PRESET_ARCHIPELAGO`) in `TerrainConfig.ts` so sessions don't start from scratch tuning.
 
-**Option D — Flow field (vector-based)**
-Use a low-frequency noise gradient as a flow field, trace streamlines from high to low, carve along them.
-- More control than random walk, less compute than hydraulic erosion
+## Remaining Refactoring Tasks
 
-### Recommended order
-1. Try **Option C** first (minimal risk, reuses existing warp data)
-2. If result feels too symmetrical, move to **Option A** (meander walk)
-3. **Option B** (hydraulic) is the long-term gold standard but a significant time investment
+### Small / safe
+- **Delete `src/engine/shaders/ShaderManager.ts`** — legacy file, entirely superseded by `onBeforeCompile` injection in `TerrainMaterial.ts` and `EdgeMaterial.ts`. Also delete `skybox.frag/vert` and `sunHalo.frag/vert` if confirmed unused.
+- **Split `ReflectionControls.ts` import** — currently imports both `ReflectionParameters` and `LightingParameters` on two lines; could be one `import { ..., ... } from '../config/LightingConfig'` (cosmetic).
+
+### Before Phase 3 (must-do)
+- **InstancedMesh unit renderer architecture** — design `UnitRenderer.ts` in `units/` before writing any unit code. Retrofitting instancing after units exist is painful. Decide: one `InstancedMesh` per unit type, synced each frame from `UnitManager`.
+- **NavigationGrid** — build `movement/NavigationGrid.ts` fed by `HeightMap.getSlopeAngle()`. Current CELL_SIZE=64 world units is reasonable; render mesh vertex spacing is 40 — nav grid is coarser than render mesh, which is correct. Decide cell resolution before writing pathfinding.
 
 ## Do Not Touch
-- `TerrainGenerator.ts` — fragile shader injection via `onBeforeCompile`; reflection and edge systems depend on precise uniform setup
+- `TerrainMaterial.ts` / `EdgeMaterial.ts` — fragile shader injection via `onBeforeCompile`; reflection and edge systems depend on precise uniform setup and injection order
 - `LightingSystem.ts` — carefully tuned; colour transitions are parameter-driven
 - `BufferPool.ts` — used by TerrainGenerator; changes risk memory leaks
 - `index.ts` — must remain a pure re-export with NO side effects (instantiating Game here caused the dual-instance bug)
@@ -166,6 +162,21 @@ Use a low-frequency noise gradient as a flow field, trace streamlines from high 
 - `LightingSystem` and `PerformanceMonitor` are singletons — always use `getInstance()`, never `new` directly
 - Both clear static instance in `dispose()` so HMR creates a fresh instance correctly
 - `Game.dispose()` stops animate() loop (`disposed` flag), removes resize listener, disposes all singletons in order
+
+## HeightMap API (src/engine/terrain/HeightMap.ts)
+All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Available after first `generate()`, replaced on each `regenerate()`.
+
+| Method | Returns | Use for |
+|---|---|---|
+| `getHeightAt(x, z)` | `number` | Snap unit Y to surface |
+| `getNormalAt(x, z)` | `Vector3` | Surface direction at a point |
+| `getSlopeAngle(x, z)` | `number` (radians) | Traversability gate (0=flat, PI/2=cliff) |
+| `isTraversable(x, z, maxSlope)` | `boolean` | Pathfinding walkability |
+| `getGroundedPosition(x, z)` | `Vector3` | Exact world pos on terrain surface |
+| `getGroundOrientation(x, z, facingAngle)` | `Quaternion` | Unit tilt + heading combined |
+| `getFlyingY(x, z, targetAlt, minClearance)` | `number` | Flying unit Y above terrain |
+
+`getGroundOrientation` combines a slope-tilt quaternion (`up → surfaceNormal`) with a heading yaw. Units on slopes visually angle with the ground; flying units use `getFlyingY` to stay clear of peaks.
 
 ## Development Commands
 ```bash
@@ -186,14 +197,21 @@ npm run build     # Production bundle → public/bundle.js
 - ✅ Replaced SimplexNoise with FastNoiseLite (OpenSimplex2S + domain warp)
 - ✅ Map doubled to 8000×8000
 - ✅ Noise visualiser tool
+- ✅ HeightMap — retained spatial query API for all gameplay systems
+- ✅ Source refactor — TerrainGenerator halved (766→348 lines); TerrainMaterial + EdgeMaterial extracted; GameParameters split into TerrainConfig / LightingConfig / CameraConfig; stub folders for all future phases
 
 **Remaining:**
-- ⬜ Aesthetic tuning of edge colours and pulse (see tuning notes above)
-- ⬜ Organic valley/river carving (see future task notes above)
-- ⬜ Lock in good terrain presets as named configs
+- ⬜ Fix edgeUniforms lost on regen bug (see above)
+- ⬜ Organic valley/river carving — try Option C first
+- ⬜ Lock in named terrain presets
 
 ### Phase 3 — Add Units
-- Basic `Unit` class, `UnitManager`, click-to-select, right-click-to-move, health bar
+Pre-requisite architecture in place:
+- ✅ HeightMap spatial queries (height, slope, orientation, fly altitude)
+- ✅ Folder structure (`units/`, `movement/`)
+- ⬜ Design InstancedMesh renderer before writing Unit code
+- ⬜ NavigationGrid from HeightMap slope data
+- Unit class, UnitManager, click-to-select, right-click-to-move, health bar
 
 ### Phase 4 — Combat
 ### Phase 5 — Resource System (Skirulum, Vlux, Fredalite, Scrap)
@@ -211,6 +229,8 @@ npm run build     # Production bundle → public/bundle.js
 | 29 Mar 2026 | Fixed dual Game instance bug (index.ts side effect). Fixed vertex colour normalisation. HMR cleanup in main.ts. |
 | 29 Mar 2026 | Replaced SimplexNoise with FastNoiseLite (OpenSimplex2S + ridged peaks + domain warp). Full noise param exposure in TerrainControls. Noise visualiser at /noise-visualizer.html. |
 | 29 Mar 2026 | Doubled map to 8000×8000. Edge grid replaced with GPU shader: 5-layer height colour ramp + animated electric pulse (3 overlapping pulses, per-edge hash offset, AdditiveBlending neon glow). EdgeControls live debug panel. |
+| 01 Apr 2026 | Added HeightMap (terrain/HeightMap.ts): retained height data, bilinear queries, surface normals, slope, traversability, ground orientation (slope-tilt + heading), flying altitude. TerrainGenerator.getHeightMap() exposes to all gameplay systems. |
+| 01 Apr 2026 | Source refactor: TerrainGenerator 766→348 lines; TerrainMaterial.ts + EdgeMaterial.ts extracted (shader logic unchanged); GameParameters.ts split into TerrainConfig/LightingConfig/CameraConfig; dead coordinate-marker code removed; stub folders created for units/movement/combat/resources/buildings/ai. |
 
 ---
 *Update this file at the end of every coding session.*

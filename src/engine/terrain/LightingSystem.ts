@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LightingParameters } from '../config/GameParameters';
+import { LightingParameters } from '../config/LightingConfig';
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
     const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
