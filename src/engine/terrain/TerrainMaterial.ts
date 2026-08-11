@@ -343,15 +343,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             `#include <color_fragment>
             float reflectionStrength = calculateReflection();
             vec3 reflectionColor = sunColor * reflectionStrength;
-            diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});
-            // Debug isolation (see uniform declaration above): overrides
-            // EVERYTHING computed above with sunGlitter's raw [0,1] value as
-            // flat greyscale. Comes AFTER the normal mixing on purpose — this
-            // always wins when the toggle is on, regardless of what the rest
-            // of calculateReflection() decided.
-            if (debugShowGlitter > 0.5) {
-                diffuseColor.rgb = vec3(debugGlitterValue);
-            }`
+            diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
         );
 
         s.fragmentShader = s.fragmentShader.replace(
@@ -371,6 +363,27 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             `#include <metalnessmap_fragment>
             metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);
             if (debugShowGlitter > 0.5) { metalnessFactor = 0.0; }`
+        );
+
+        // Debug isolation, take 2 — MUST happen here, not in color_fragment.
+        // First attempt overrode diffuseColor.rgb there, but diffuseColor is
+        // only the material's ALBEDO INPUT to Three's lighting equations —
+        // it still gets multiplied by the scene's actual light intensity
+        // (ambient + sunLight) before reaching the screen. In a dark scene
+        // (low ambient, dim/low sun) that multiplication can crush even a
+        // healthy sunGlitter value down to near-invisible — Simon saw flat
+        // black and reasonably read that as "sunGlitter is broken", when it
+        // was actually the debug VIEW that was broken. `dithering_fragment`
+        // is the last chunk in Three's standard fragment shader — overriding
+        // gl_FragColor here happens AFTER all lighting is already resolved,
+        // so debugGlitterValue reaches the screen completely unlit and
+        // undimmed, exactly as calculateSunGlitter() actually computed it.
+        s.fragmentShader = s.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            `#include <dithering_fragment>
+            if (debugShowGlitter > 0.5) {
+                gl_FragColor = vec4(vec3(debugGlitterValue), 1.0);
+            }`
         );
 
         (material as any).customShader = s;
