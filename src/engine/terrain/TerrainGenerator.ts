@@ -151,7 +151,12 @@ export class TerrainGenerator {
                 shader.uniforms.reflectionParams.value.copy(params);
                 if (this.material) this.material.needsUpdate = true;
             }
-        }, lightingSystem);
+        }, lightingSystem, (reach, width) => {
+            const shader = (this.material as any)?.customShader;
+            if (shader?.uniforms?.glitterReach) {
+                shader.uniforms.glitterReach.value.set(reach, width);
+            }
+        });
 
         this.initialize();
     }

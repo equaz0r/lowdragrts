@@ -3,6 +3,7 @@ import {
     DoubleSide,
     Color,
     Vector3,
+    Vector2,
 } from 'three';
 import { TerrainParameters } from '../config/TerrainConfig';
 import { ReflectionParameters } from '../config/LightingConfig';
@@ -41,12 +42,30 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // blob. Attempt 2 (jittering the terrain normal before a Blinn-Phong test,
 // hoping the wedge would emerge on its own) was verified WRONG by direct
 // numeric simulation — it produces the shape backwards for this game's
-// specific camera/sun geometry (wide near camera, narrow near horizon).
-// This version explicitly authors the wedge envelope along the real
-// camera->sun ground axis (grounded in actual live positions, not an
-// arbitrary mask) and textures it with noise for sparkle — verified by
-// simulation to produce the correct wide-at-horizon/narrow-at-camera shape
-// before shipping. See the plan doc for the simulation writeup.
+// specific camera/sun geometry (wide near camera, narrow near horizon). This
+// version explicitly authors the wedge envelope along the real camera->sun
+// ground axis (grounded in actual live positions, not an arbitrary mask) and
+// textures it with noise for sparkle.
+//
+// Round 4 (still 11 Aug 2026): even with the axis maths verified correct
+// (it DOES converge exactly on the sun's true screen position — checked
+// numerically for an off-axis camera too), Simon reported the visible
+// wedge still reads as a thin, slightly-misaligned LINE rather than a wide
+// patch. Root cause, also found by simulation: the axis only converges on
+// the sun in the FAR limit (as along -> distance to sun); the NEAR-camera
+// portion — which is what's actually most visible on screen, per the
+// frustum analysis above — is genuinely offset from "dead centre on the
+// sun" for any camera that isn't looking directly along that axis. That's
+// real, correct geometry for a THIN line, not a bug — but a thin line makes
+// that imprecision obvious, while a WIDE patch (like real photographed sun
+// glitter) reads as "roughly in the sun's direction" regardless. Fix:
+// reach full width much sooner (smaller ALONG_FAR, WIDTH_POWER<1 for fast
+// early growth) so width — not pixel-perfect alignment — carries the
+// "pointing at the sun" read. ALONG_FAR/WIDTH_FAR are also runtime uniforms
+// now (`glitterReach`, ReflectionControls' "Sun Glitter" section) since
+// getting these exactly right depends on Simon's actual play-camera
+// distance, which live sliders answer far faster than another guess-and-
+// ship round-trip.
 const GLITTER_FREQUENCY = 0.03;  // world-units^-1 — sparkle texture grain within the wedge
 const GLITTER_SPEED     = 0.6;
 // Wedge envelope: WIDTH_NEAR/WIDTH_FAR are world-unit half-widths of the
@@ -56,12 +75,15 @@ const GLITTER_SPEED     = 0.6;
 // 0: for most camera angles the ground directly at the camera's feet isn't
 // even in the view frustum (you're not looking straight down), so the
 // visible "near" end of the wedge is always some distance out — verified
-// against the simulated camera frustum, not guessed.
-const GLITTER_ALONG_NEAR  = 300;
-const GLITTER_ALONG_FAR   = 6000;
-const GLITTER_WIDTH_NEAR  = 50;
-const GLITTER_WIDTH_FAR   = 1800;
-const GLITTER_WIDTH_POWER = 1.4;  // >1 = width grows slowly at first, faster nearer the horizon
+// against the simulated camera frustum, not guessed. ALONG_FAR/WIDTH_FAR
+// below are just the INITIAL values for the `glitterReach` uniform (live
+// slider-adjustable from here on) — NEAR_WIDTH/ALONG_NEAR/WIDTH_POWER stay
+// baked constants, less critical to live-tune than reach/width were.
+const GLITTER_ALONG_NEAR  = 250;
+const GLITTER_ALONG_FAR   = 2500;   // was 6000 — reach full width much sooner
+const GLITTER_WIDTH_NEAR  = 70;     // was 50
+const GLITTER_WIDTH_FAR   = 1200;   // was 1800 — see glitterReach uniform, live-adjustable
+const GLITTER_WIDTH_POWER = 0.8;    // was 1.4 (>1 = slow start) — now <1 = fast early growth
 const GLITTER_SPARKLE_CONTRAST = 2.5; // higher = fewer, brighter individual flecks vs. an even wash
 // Floor so the wedge's SHAPE stays visible even where the sparkle noise
 // happens to be dim that frame — without this, a narrow/sparse stretch (e.g.
@@ -107,6 +129,12 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
         s.uniforms.heightScale     = { value: heightScale };
+        // Sun glitter reach/width (x = GLITTER_ALONG_FAR, y = GLITTER_WIDTH_FAR) —
+        // live-adjustable via ReflectionControls' "Sun Glitter" sliders, NOT baked
+        // into the shader template like the other GLITTER_* constants, because how
+        // far the wedge needs to reach before hitting full width depends on the
+        // player's actual camera distance, which only live tuning can answer.
+        s.uniforms.glitterReach    = { value: new Vector2(GLITTER_ALONG_FAR, GLITTER_WIDTH_FAR) };
         // Was never actually declared in the GLSL below despite TerrainGenerator.
         // update() pushing a value into shader.uniforms.time every frame — the JS
         // object had it, but with no matching `uniform float time;` in the source,
@@ -139,6 +167,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             uniform vec3 sunColor;
             uniform float heightScale;
             uniform float time;
+            uniform vec2 glitterReach; // x = along-distance for full width, y = full width itself
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
             varying vec2 vGridPosition;
@@ -193,8 +222,13 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 vec2 perp = toFrag - axis * along;
                 float lateralOffset = length(perp);
 
-                float t = clamp((along - ${GLITTER_ALONG_NEAR.toFixed(1)}) / ${(GLITTER_ALONG_FAR - GLITTER_ALONG_NEAR).toFixed(1)}, 0.0, 1.0);
-                float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, ${GLITTER_WIDTH_FAR.toFixed(1)}, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
+                // glitterReach.x/.y (alongFar/widthFar) are live-adjustable — see
+                // the uniform declaration above for why. max() guard: same
+                // smoothstep/divide-by-zero gotcha as reflectionParams.z elsewhere
+                // in this file if the reach slider ever got dragged down to
+                // GLITTER_ALONG_NEAR exactly.
+                float t = clamp((along - ${GLITTER_ALONG_NEAR.toFixed(1)}) / max(1.0, glitterReach.x - ${GLITTER_ALONG_NEAR.toFixed(1)}), 0.0, 1.0);
+                float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, glitterReach.y, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
                 float wedgeFactor = 1.0 - smoothstep(allowedWidth * 0.5, allowedWidth, lateralOffset);
 
                 vec2 cell = worldPos.xz * ${GLITTER_FREQUENCY.toFixed(3)}

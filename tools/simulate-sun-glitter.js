@@ -33,13 +33,17 @@ function smoothstep(e0,e1,x) { const t = clamp((x-e0)/(e1-e0),0,1); return t*t*(
 function glitterHash(p) { return fract(Math.sin(dot2(p, [127.1, 311.7])) * 43758.5453); }
 
 // --- Keep in sync with TerrainMaterial.ts ---
+// ALONG_FAR/WIDTH_FAR are now the `glitterReach` uniform's INITIAL values
+// (live-adjustable via ReflectionControls' "Sun Glitter" sliders in the
+// real game) — override them here if you're simulating a specific slider
+// position rather than the defaults.
 const GLITTER_FREQUENCY = 0.03;
 const GLITTER_SPEED = 0.6;
-const GLITTER_ALONG_NEAR = 300;
-const GLITTER_ALONG_FAR = 6000;
-const GLITTER_WIDTH_NEAR = 50;
-const GLITTER_WIDTH_FAR = 1800;
-const GLITTER_WIDTH_POWER = 1.4;
+const GLITTER_ALONG_NEAR = 250;
+const GLITTER_ALONG_FAR = 2500;
+const GLITTER_WIDTH_NEAR = 70;
+const GLITTER_WIDTH_FAR = 1200;
+const GLITTER_WIDTH_POWER = 0.8;
 const GLITTER_SPARKLE_CONTRAST = 2.5;
 const GLITTER_BASE_GLOW = 0.25;
 
@@ -84,14 +88,28 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
 }
 
 // --- Perspective camera + screen-space raycast to the flat ground plane ---
-function makeCamera(pos, target, fovDeg, aspect) {
-    const forward = norm3(sub3(target, pos));
+// `look` may be a lookAt target (camera assumed aimed at it) OR, for testing
+// OFF-AXIS cameras that aren't looking directly at the sun, pass an explicit
+// forward vector via { forward: [x,y,z] } instead.
+function makeCamera(pos, look, fovDeg, aspect) {
+    const forward = Array.isArray(look) ? norm3(sub3(look, pos)) : norm3(look.forward);
     const right = norm3(cross3(forward, [0,1,0]));
     const up = norm3(cross3(right, forward));
     const tanHalfFov = Math.tan(fovDeg * Math.PI/180/2);
     return { pos, forward, right, up, tanHalfFov, aspect,
         rayDir(sx, sy) {
             return norm3(add3(forward, add3(scale3(right, sx*tanHalfFov*aspect), scale3(up, sy*tanHalfFov))));
+        },
+        // Where does a given world point land on screen? Used to mark the
+        // sun's TRUE screen position so misalignment is visible directly,
+        // not just inferred.
+        project(worldPos) {
+            const rel = sub3(worldPos, pos);
+            const z = dot3(rel, forward);
+            if (z <= 0.01) return null;
+            const sx = (dot3(rel, right)/z)/(tanHalfFov*aspect);
+            const sy = (dot3(rel, up)/z)/tanHalfFov;
+            return { sx, sy };
         }
     };
 }
@@ -117,7 +135,15 @@ function renderScreenAscii(cam, sunPos, times, label, W=70, H=45) {
             screen[py][px] = maxVal > 0.6 ? '#' : (maxVal > 0.25 ? '+' : (maxVal > 0.05 ? '.' : ' '));
         }
     }
-    console.log(`\n=== ${label} === (top=horizon/sun, bottom=near camera)`);
+    // Mark the sun's true screen position with 'S' — the wedge should
+    // visually surround/point at it, especially for off-axis cameras.
+    const sunProj = cam.project(sunPos);
+    if (sunProj) {
+        const spx = Math.round((sunProj.sx+1)/2*(W-1));
+        const spy = Math.round((1-sunProj.sy)/2*(H-1));
+        if (spy >= 0 && spy < H && spx >= 0 && spx < W) screen[spy][spx] = 'S';
+    }
+    console.log(`\n=== ${label} === (S = sun's true screen position; top=horizon, bottom=near camera)`);
     for (const row of screen) console.log(row.join(''));
 }
 
@@ -126,8 +152,19 @@ const times = [5, 33, 71, 140, 210, 300, 380];
 
 renderScreenAscii(makeCamera([3200,450,0], [0,150,0], 75, 0.7), sunPos, times, 'Camera aligned with sun azimuth, moderate height');
 renderScreenAscii(makeCamera([1800,250,200], [0,120,0], 75, 0.7), sunPos, times, 'Lower/closer camera');
+// Off-axis: NOT looking directly at the sun — this is the realistic case
+// (players don't perfectly centre the sun) and the one that exposed the
+// "reads as misaligned" complaint on 11 Aug 2026. The wedge won't
+// perfectly converge on 'S' near the camera (that's real geometry, not a
+// bug — see the GLITTER_* comment block in TerrainMaterial.ts) but should
+// get close to it and be wide enough that the imprecision isn't obvious.
+renderScreenAscii(makeCamera([2000,500,1500], { forward: [-0.8,-0.15,-0.5] }, 75, 0.7), sunPos, times, 'Off-axis camera (not looking directly at the sun)');
 
-console.log('\nExpected: a wedge WIDE near the top (horizon/sun) narrowing toward the bottom (camera).');
-console.log('If it comes out backwards or missing, do not re-guess constants blind — extend this');
-console.log('script (more cameras, print the raw along/lateralOffset/wedgeFactor terms) until the');
-console.log('bug is understood, the way this file caught two real bugs on 11 Aug 2026.');
+console.log('\nExpected: a wedge WIDE near the top (horizon/sun) narrowing toward the bottom (camera),');
+console.log('surrounding or close to the marked S (sun\'s true screen position) even off-axis.');
+console.log('If it comes out backwards, missing, or a thin line nowhere near S, do not re-guess');
+console.log('constants blind — extend this script (more cameras, print the raw along/lateralOffset/');
+console.log('wedgeFactor terms) until the bug is understood, the way this file caught real bugs');
+console.log('(backwards shape, a Lambertian dimmer misused on a specular effect, and this');
+console.log('alignment-vs-width tradeoff) on 11 Aug 2026 — reasoning through the GLSL by hand alone');
+console.log('got it wrong three rounds in a row before this script existed.');

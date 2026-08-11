@@ -12,17 +12,31 @@ export interface ReflectionSettings {
     reflectionPower: number;
     sunIntensity: number;
     sunHeight: number;
+    glitterReach: number;
+    glitterWidth: number;
 }
 
 export class ReflectionControls {
     private container: HTMLDivElement;
     private onUpdate: (params: Vector4) => void;
+    private onGlitterUpdate: (reach: number, width: number) => void;
     private currentParams: Vector4;
+    // Defaults match GLITTER_ALONG_FAR/GLITTER_WIDTH_FAR's initial uniform
+    // values in TerrainMaterial.ts — see that file for why these two
+    // specifically are live-adjustable (getting the wedge's reach/width
+    // right depends on the player's actual camera distance).
+    private currentGlitterReach = 2500;
+    private currentGlitterWidth = 1200;
     private lightingSystem: LightingSystem;
     private dragHandle: DragHandle | null = null;
 
-    constructor(onUpdate: (params: Vector4) => void, lightingSystem: LightingSystem) {
+    constructor(
+        onUpdate: (params: Vector4) => void,
+        lightingSystem: LightingSystem,
+        onGlitterUpdate: (reach: number, width: number) => void = () => {},
+    ) {
         this.onUpdate = onUpdate;
+        this.onGlitterUpdate = onGlitterUpdate;
         this.lightingSystem = lightingSystem;
         this.currentParams = ReflectionParameters.REFLECTION_PARAMS.clone();
 
@@ -186,6 +200,34 @@ export class ReflectionControls {
             },
             'Controls the height of the sun in the sky'
         );
+
+        // Add separator
+        const glitterSeparator = document.createElement('div');
+        glitterSeparator.style.borderTop = '1px solid rgba(255, 255, 255, 0.3)';
+        glitterSeparator.style.margin = '15px 0';
+        this.container.appendChild(glitterSeparator);
+
+        const glitterTitle = document.createElement('div');
+        glitterTitle.textContent = 'Sun Glitter';
+        glitterTitle.style.fontSize = '11px';
+        glitterTitle.style.fontWeight = 'bold';
+        glitterTitle.style.marginBottom = '4px';
+        this.container.appendChild(glitterTitle);
+
+        // Reach/width are world-unit distances (TerrainMaterial.ts's
+        // GLITTER_ALONG_FAR/WIDTH_FAR) — how far along the camera->sun ground
+        // axis the glitter wedge takes to reach full width, and how wide that
+        // full width is. Deliberately NOT normalized 0-1 sliders: raw world
+        // units make it obvious how these relate to the 8000-unit map.
+        this.createSlider('Glitter Reach', 500, 6000, this.currentGlitterReach, 50, (value) => {
+            this.currentGlitterReach = value;
+            this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
+        }, 'World-unit distance for the sun glitter wedge to reach full width — smaller = fills the visible screen sooner');
+
+        this.createSlider('Glitter Width', 200, 3000, this.currentGlitterWidth, 50, (value) => {
+            this.currentGlitterWidth = value;
+            this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
+        }, 'World-unit full width of the sun glitter wedge at its widest (near the horizon)');
     }
 
     // ── Export / Import ─────────────────────────────────────────────────────
@@ -198,6 +240,8 @@ export class ReflectionControls {
             reflectionPower: this.currentParams.w,
             sunIntensity: LightingParameters.SUN_BASE_INTENSITY,
             sunHeight: this.lightingSystem.getTargetSunHeight(),
+            glitterReach: this.currentGlitterReach,
+            glitterWidth: this.currentGlitterWidth,
         };
     }
 
@@ -206,6 +250,11 @@ export class ReflectionControls {
         this.onUpdate(this.currentParams);
         this.lightingSystem.setSunIntensity(data.sunIntensity);
         this.lightingSystem.setSunHeight(data.sunHeight);
+        // Older exports won't have these two fields — fall back to the
+        // current (already-sane) defaults rather than importing `undefined`.
+        this.currentGlitterReach = data.glitterReach ?? this.currentGlitterReach;
+        this.currentGlitterWidth = data.glitterWidth ?? this.currentGlitterWidth;
+        this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
         this.renderAll(); // refresh sliders to match
     }
 
