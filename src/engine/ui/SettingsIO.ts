@@ -2,6 +2,7 @@ import { TerrainGenerator, TerrainConfig } from '../terrain/TerrainGenerator';
 import { TerrainControls } from './TerrainControls';
 import { EdgeControls, EdgeSettings } from './EdgeControls';
 import { ReflectionControls, ReflectionSettings } from './ReflectionControls';
+import { makeDraggable, DragHandle, clearAllPanelPositions } from './Draggable';
 
 export interface SceneSettings {
     version: 1;
@@ -27,6 +28,7 @@ export class SettingsIO {
     private terrainControls: TerrainControls;
     private edgeControls: EdgeControls;
     private reflectionControls: ReflectionControls;
+    private dragHandle: DragHandle | null = null;
 
     constructor(
         terrainGenerator: TerrainGenerator,
@@ -63,6 +65,7 @@ export class SettingsIO {
             paddingBottom: '2px',
         });
         this.container.appendChild(title);
+        this.dragHandle = makeDraggable(this.container, title, 'settings-io');
 
         const btnRow = document.createElement('div');
         btnRow.style.display = 'flex';
@@ -96,6 +99,20 @@ export class SettingsIO {
         });
         this.status.textContent = 'Ready';
         this.container.appendChild(this.status);
+
+        const resetRow = document.createElement('div');
+        resetRow.style.marginTop = '4px';
+        const resetBtn = this.makeButton('Reset Panel Positions', () => {
+            clearAllPanelPositions();
+            window.location.reload();
+        });
+        // Muted styling — distinct from Export/Import, this is a "layout"
+        // action not a "data" one, and it's a full reload, not instant.
+        resetBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+        resetBtn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+        resetBtn.title = 'Clears saved drag positions for all panels and reloads the page';
+        resetRow.appendChild(resetBtn);
+        this.container.appendChild(resetRow);
 
         document.body.appendChild(this.container);
     }
@@ -174,6 +191,7 @@ export class SettingsIO {
     }
 
     public dispose(): void {
+        this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }

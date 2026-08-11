@@ -1,6 +1,7 @@
 import { Color } from 'three';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { EdgeParameters } from '../config/TerrainConfig';
+import { makeDraggable, DragHandle } from './Draggable';
 
 /** JSON-safe snapshot of EdgeParameters — see SettingsIO.ts. */
 export interface EdgeSettings {
@@ -17,6 +18,7 @@ export interface EdgeSettings {
 export class EdgeControls {
     private container: HTMLDivElement;
     private terrainGenerator: TerrainGenerator;
+    private dragHandle: DragHandle | null = null;
 
     constructor(terrainGenerator: TerrainGenerator) {
         this.terrainGenerator = terrainGenerator;
@@ -44,6 +46,7 @@ export class EdgeControls {
     // importSettings(), so the sliders/colour pickers reflect whatever just
     // changed the underlying values (same pattern as TerrainControls.renderAll).
     private renderAll(): void {
+        this.dragHandle?.destroy(); // old title (drag handle) is about to be destroyed below
         this.container.innerHTML = '';
 
         const title = document.createElement('div');
@@ -55,6 +58,7 @@ export class EdgeControls {
             paddingBottom: '2px',
         });
         this.container.appendChild(title);
+        this.dragHandle = makeDraggable(this.container, title, 'grid-appearance');
 
         this.buildLayerSection();
         this.buildPulseSection();
@@ -303,6 +307,7 @@ export class EdgeControls {
     }
 
     public dispose(): void {
+        this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }

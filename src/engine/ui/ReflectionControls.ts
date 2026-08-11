@@ -2,6 +2,7 @@ import { Vector4 } from 'three';
 import { ReflectionParameters } from '../config/LightingConfig';
 import { LightingParameters } from '../config/LightingConfig';
 import { LightingSystem } from '../terrain/LightingSystem';
+import { makeDraggable, DragHandle } from './Draggable';
 
 /** JSON-safe snapshot of this panel's tunables — see SettingsIO.ts. */
 export interface ReflectionSettings {
@@ -18,6 +19,7 @@ export class ReflectionControls {
     private onUpdate: (params: Vector4) => void;
     private currentParams: Vector4;
     private lightingSystem: LightingSystem;
+    private dragHandle: DragHandle | null = null;
 
     constructor(onUpdate: (params: Vector4) => void, lightingSystem: LightingSystem) {
         this.onUpdate = onUpdate;
@@ -43,6 +45,7 @@ export class ReflectionControls {
 
     // Full rebuild — used at construction and after importSettings().
     private renderAll(): void {
+        this.dragHandle?.destroy(); // old title (drag handle) is about to be destroyed below
         this.container.innerHTML = '';
 
         const title = document.createElement('div');
@@ -53,6 +56,7 @@ export class ReflectionControls {
         title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
         title.style.paddingBottom = '2px';
         this.container.appendChild(title);
+        this.dragHandle = makeDraggable(this.container, title, 'reflection-controls');
 
         this.createControls();
     }
@@ -206,8 +210,9 @@ export class ReflectionControls {
     }
 
     public dispose(): void {
+        this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }
     }
-} 
+}

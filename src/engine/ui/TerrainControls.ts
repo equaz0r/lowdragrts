@@ -1,4 +1,5 @@
 import { TerrainGenerator, TerrainPresets, TerrainConfig } from '../terrain/TerrainGenerator';
+import { makeDraggable, DragHandle } from './Draggable';
 
 /** Decimal places to show for a slider's step size. A flat toFixed(2) truncated
  *  tiny-magnitude sliders (baseFrequency etc., step ~0.0001) to a useless "0.00" —
@@ -18,6 +19,7 @@ export class TerrainControls {
     private btn!: HTMLButtonElement;
     private statusEl!: HTMLDivElement;
     private regenCount: number = 0;
+    private dragHandle: DragHandle | null = null;
 
     constructor(terrainGenerator: TerrainGenerator, onNewTerrain?: () => void) {
         this.terrainGenerator = terrainGenerator;
@@ -43,6 +45,10 @@ export class TerrainControls {
     // Full rebuild — used at construction and after applying a preset, so slider
     // positions/displays reflect whatever just changed the underlying config.
     private renderAll(): void {
+        // Rebuild destroys the old title element the drag handle was bound
+        // to — destroy() first, then rebind to the fresh one below, or
+        // dragging silently stops working after the first preset/import click.
+        this.dragHandle?.destroy();
         this.container.innerHTML = '';
 
         const title = document.createElement('div');
@@ -53,6 +59,7 @@ export class TerrainControls {
         title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
         title.style.paddingBottom = '2px';
         this.container.appendChild(title);
+        this.dragHandle = makeDraggable(this.container, title, 'terrain-shape');
 
         this.createControls();
     }
@@ -443,6 +450,7 @@ export class TerrainControls {
             clearTimeout(this.debounceTimer);
             this.debounceTimer = null;
         }
+        this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }

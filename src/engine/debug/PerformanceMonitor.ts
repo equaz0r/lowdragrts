@@ -1,4 +1,5 @@
 import { WebGLRenderer } from 'three';
+import { makeDraggable, DragHandle } from '../ui/Draggable';
 
 interface PerformanceMetrics {
     fps: number;
@@ -20,6 +21,8 @@ export class PerformanceMonitor {
     private static instance: PerformanceMonitor | null = null;
     private renderer: WebGLRenderer;
     private container: HTMLDivElement;
+    private statsContainer!: HTMLDivElement;
+    private dragHandle: DragHandle | null = null;
     private metrics: PerformanceMetrics;
     private lastTime: number;
     private frameCount: number;
@@ -75,10 +78,24 @@ export class PerformanceMonitor {
         this.container.style.pointerEvents = 'none';
         this.container.style.width = '180px';
 
+        // Title/drag handle — this panel previously had no header at all, so
+        // nothing to grab. makeDraggable() sets pointerEvents:auto on it
+        // directly, overriding the container's pointerEvents:none above (that
+        // none is deliberate — lets clicks/drags on the 3D scene pass through
+        // this overlay everywhere else).
+        const title = document.createElement('div');
+        title.textContent = 'Performance';
+        title.style.fontWeight = 'bold';
+        title.style.marginBottom = '3px';
+        title.style.borderBottom = '1px solid rgba(255,255,255,0.2)';
+        title.style.paddingBottom = '2px';
+        this.container.appendChild(title);
+        this.dragHandle = makeDraggable(this.container, title, 'performance-monitor');
+
         // Create stats container (new separate container for stats)
-        const statsContainer = document.createElement('div');
-        statsContainer.style.marginBottom = '2px';
-        this.container.appendChild(statsContainer);
+        this.statsContainer = document.createElement('div');
+        this.statsContainer.style.marginBottom = '2px';
+        this.container.appendChild(this.statsContainer);
 
         // Create graph canvas with updated styles
         this.graphCanvas = document.createElement('canvas');
@@ -105,8 +122,9 @@ export class PerformanceMonitor {
         toggleButton.style.pointerEvents = 'auto';
         toggleButton.onclick = () => this.toggleVisibility();
 
-        // Append elements in the desired order
-        this.container.appendChild(statsContainer);
+        // Append elements in the desired order (statsContainer already
+        // appended above — appending it again here was a harmless no-op
+        // reorder, since a node can only have one parent; removed)
         this.container.appendChild(this.graphCanvas);
         this.container.appendChild(toggleButton);
 
@@ -188,12 +206,12 @@ export class PerformanceMonitor {
             );
         }
 
-        // Update stats in the existing stats container
-        const statsContainer = this.container.firstChild as HTMLDivElement;
-        if (statsContainer) {
-            statsContainer.style.lineHeight = '1.2';
-            statsContainer.innerHTML = stats.join('<br>');
-        }
+        // Update stats in the existing stats container. Was `this.container.
+        // firstChild` — broke the moment a title element became the actual
+        // first child; using the stored reference directly is robust to DOM
+        // order regardless of what else gets added to the container.
+        this.statsContainer.style.lineHeight = '1.2';
+        this.statsContainer.innerHTML = stats.join('<br>');
     }
 
     private drawGraph(): void {
@@ -259,14 +277,12 @@ export class PerformanceMonitor {
 
     public toggleVisibility(): void {
         this.visible = !this.visible;
-        
-        // Get the stats container and graph
-        const statsContainer = this.container.firstChild as HTMLDivElement;
-        const graph = this.container.children[1] as HTMLCanvasElement;
-        
-        // Toggle visibility of stats and graph only
-        if (statsContainer) statsContainer.style.display = this.visible ? 'block' : 'none';
-        if (graph) graph.style.display = this.visible ? 'block' : 'none';
+
+        // Was index-based (this.container.firstChild / children[1]) — broke
+        // as soon as the title element shifted every child's index. Stored
+        // references (this.statsContainer, this.graphCanvas) are immune to that.
+        this.statsContainer.style.display = this.visible ? 'block' : 'none';
+        this.graphCanvas.style.display = this.visible ? 'block' : 'none';
         
         // Update button text
         const button = this.container.querySelector('button');
@@ -280,9 +296,10 @@ export class PerformanceMonitor {
     }
 
     public dispose(): void {
+        this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }
         PerformanceMonitor.instance = null;
     }
-} 
+}
