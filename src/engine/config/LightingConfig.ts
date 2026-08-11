@@ -72,23 +72,32 @@ export const ReflectionParameters = {
     REFLECTION_PARAMS: new Vector4(0.61, 0.47, 0.30, 0.90),
     SUN_INTENSITY:     0.5,
 
-    // Data-driven (simulated calculateReflection() in isolation, matching the
-    // shader formula exactly, across 100k random viewing angles) — not
-    // guessed. The previous round cut these hard to kill a saturation bug
-    // (91% of angles maxed out — see git history); with the clamp() fix in
-    // TerrainMaterial.ts, that's now a non-issue regardless of weight, so
-    // these are boosted back up ~1.5x for a genuinely visible glint: avg
-    // reflectionStrength ~0.64, ~20% of angles hit full strength (a real
-    // highlight, not everywhere) rather than the prior ~0.29/0% (barely
-    // there) or the original 91%-saturated mess.
-    VIEW_FACTOR_WEIGHT:     0.55,
-    SUN_FACTOR_WEIGHT:      0.45,
+    // VIEW_FACTOR_WEIGHT/SUN_FACTOR_WEIGHT/SUN_FACTOR_POWER/VIEW_FACTOR_POWER
+    // (the old physically-based N·L / reflect() specular terms) are GONE —
+    // replaced by SUN_GLINT_WEIGHT/SHARPNESS below. Physically-correct
+    // reflection off an off-axis camera genuinely doesn't project as a
+    // straight line under the sun's screen position (confirmed 11 Aug 2026
+    // with a marked-up screenshot — the true reflection path visibly curved
+    // away from "under the sun" the closer to the camera it got, which is
+    // correct reflection-law behaviour, not a bug). Deliberately faked
+    // instead: the glint now tracks the sun's screen DIRECTION from the
+    // camera, not true reflection geometry.
     POSITION_FACTOR_WEIGHT: 0.15,
     PANEL_FACTOR_WEIGHT:    0.08,
     GRAZING_FACTOR_WEIGHT:  0.32,
 
-    SUN_FACTOR_POWER:     0.6,
-    VIEW_FACTOR_POWER:    1.2,
+    // Sun glint (fake screen-space tracking — see calculateReflection()):
+    // WEIGHT sets how much it contributes to the total; SHARPNESS controls
+    // hotspot size (higher = tighter, more pinpoint — this is an exponent on
+    // a cosine-like [0,1] alignment value, NOT a world-unit radius);
+    // FACING_GATE_POWER softly zeroes it out on surfaces facing away from the
+    // sun (a gentle exponent — pow(x, <1) — so it doesn't fight the "fake"
+    // spirit too hard, just stops back-facing cliffs glinting nonsensically).
+    // Untested numbers — first pass, expect to retune live.
+    SUN_GLINT_WEIGHT:       1.1,
+    SUN_GLINT_SHARPNESS:    100.0,
+    SUN_FACING_GATE_POWER:  0.4,
+
     HEIGHT_FACTOR_POWER:  0.3,
     GRAZING_FACTOR_POWER: 1.2,
 

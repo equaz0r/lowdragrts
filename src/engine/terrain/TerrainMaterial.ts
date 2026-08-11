@@ -59,7 +59,12 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
     material.onBeforeCompile = (shader) => {
         const s = shader as unknown as ShaderWithUniforms;
 
-        s.uniforms.sunDirection    = { value: new Vector3(-1, 0.3, 0).normalize() };
+        // Raw sun world position (not a normalized direction) — the glint
+        // calculation below needs a POINT to compute "direction from camera
+        // to sun" and "direction from this fragment to sun", not a single
+        // direction-from-origin (see the reflection function for why that
+        // distinction turned out to matter twice already this session).
+        s.uniforms.sunWorldPosition = { value: new Vector3() };
         // No custom camera uniform needed — see the fragment shader below,
         // this now uses Three's own built-in `cameraPosition` uniform
         // (declared by #include <common> itself, populated automatically
@@ -95,7 +100,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         s.fragmentShader = s.fragmentShader.replace(
             '#include <common>',
             `#include <common>
-            uniform vec3 sunDirection;
+            uniform vec3 sunWorldPosition;
             uniform vec4 reflectionParams;
             uniform vec3 sunColor;
             uniform float heightScale;
@@ -148,12 +153,34 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // "aligns only looking straight down the middle" symptom.
                 vec3 normalizedCameraDir = normalize(cameraPosition - vWorldPosition);
 
-                float sunDot = max(0.0, dot(normalizedNormal, sunDirection));
-                float sunFactor = pow(sunDot, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
+                // Sun glint — DELIBERATELY fake, not a physical reflection.
+                // True reflect()-based specular (what used to be here: N·L and
+                // R·V against the real sun direction) is geometrically correct
+                // but does NOT project as a straight line under the sun's
+                // screen position for an off-axis camera — confirmed 11 Aug
+                // 2026 with a marked-up screenshot showing the true reflection
+                // path curving away from "under the sun" the closer to the
+                // camera it got. That's genuine reflection-law behaviour, not
+                // a bug, but it reads as "wrong" for this stylised look.
+                //
+                // Instead: compare the direction from the CAMERA to this
+                // fragment against the direction from the CAMERA to the sun.
+                // When these two directions align, this fragment is wherever
+                // the sun visually appears on screen — so the hotspot always
+                // sits at the sun's screen position by construction, regardless
+                // of true reflection geometry. sunGlintSharpness controls
+                // hotspot size (it's an exponent on a cosine-like value, not a
+                // world-unit radius); the facing-sun gate stops back-facing
+                // cliffs glinting just because they're screen-aligned with the
+                // sun despite pointing away from it.
+                vec3 camToFragment = normalize(vWorldPosition - cameraPosition);
+                vec3 camToSun = normalize(sunWorldPosition - cameraPosition);
+                float sunScreenAlignment = max(0.0, dot(camToFragment, camToSun));
+                float sunGlint = pow(sunScreenAlignment, ${ReflectionParameters.SUN_GLINT_SHARPNESS.toFixed(1)});
 
-                vec3 reflectionDir = reflect(-sunDirection, normalizedNormal);
-                float viewDot = max(0.0, dot(normalizedCameraDir, reflectionDir));
-                float viewFactor = pow(viewDot, ${ReflectionParameters.VIEW_FACTOR_POWER.toFixed(2)});
+                vec3 fragToSun = normalize(sunWorldPosition - vWorldPosition);
+                float facingSun = max(0.0, dot(normalizedNormal, fragToSun));
+                sunGlint *= pow(facingSun, ${ReflectionParameters.SUN_FACING_GATE_POWER.toFixed(2)});
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
                 // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
@@ -171,8 +198,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
 
                 float totalFactor = pow(
-                    viewFactor     * ${ReflectionParameters.VIEW_FACTOR_WEIGHT.toFixed(2)} +
-                    sunFactor      * ${ReflectionParameters.SUN_FACTOR_WEIGHT.toFixed(2)} +
+                    sunGlint       * ${ReflectionParameters.SUN_GLINT_WEIGHT.toFixed(2)} +
                     positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(2)} +
                     panelFactor    * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(2)} +
                     grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(2)},

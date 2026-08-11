@@ -552,6 +552,14 @@ export class LightingSystem {
         return this.sunLight.position.clone().normalize();
     }
 
+    /** Raw sun world position (NOT normalized) — for anything computing a
+     *  direction relative to a specific point (camera, a fragment) rather
+     *  than "the direction from the origin", which is what getSunDirection()
+     *  gives. Needed for the reflection shader's screen-space sun glint. */
+    public getSunPosition(): THREE.Vector3 {
+        return this.sunLight.position.clone();
+    }
+
     /** Current representative sun colour (the shader's mid-tone stop) — for
      *  other systems (e.g. TerrainMaterial's reflection tint) that want to
      *  track the sun's actual current colour instead of a fixed one.
