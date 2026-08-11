@@ -16,6 +16,15 @@ interface ShaderWithUniforms {
     fragmentShader: string;
 }
 
+// "Sea" shimmer — see the comment inside calculateReflection() for what this
+// actually does and why. Not exposed as sliders (yet) — revisit if it needs
+// live tuning, same as the sun scanline constants in LightingSystem.ts.
+const SEA_LEVEL_FRACTION = 0.10;  // matches EdgeParameters layer 1's heightFraction
+const SEA_FADE_BAND      = 0.05;
+const SEA_WAVE_FREQUENCY = 0.003;
+const SEA_WAVE_SPEED     = 0.35;
+const SEA_WAVE_STRENGTH  = 0.18;
+
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
  * Extracted from TerrainGenerator to keep material authoring self-contained.
@@ -23,8 +32,13 @@ interface ShaderWithUniforms {
  * The compiled shader is stored as (material as any).customShader so that
  * TerrainGenerator.update() can push per-frame uniform values (camera direction,
  * time) without holding a separate reference.
+ *
+ * @param minHeight/maxHeight  Current generation's height range (same values
+ *   EdgeMaterial's colour ramp uses) — needed to know what counts as "low/flat"
+ *   for the sea shimmer without a fixed absolute Y that wouldn't generalise
+ *   across different heightScale/noise configs.
  */
-export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
+export function createTerrainMaterial(totalSize: number, minHeight: number, maxHeight: number): MeshStandardMaterial {
     const material = new MeshStandardMaterial({
         vertexColors: true,
         wireframe:    TerrainParameters.USE_WIREFRAME,
@@ -42,6 +56,14 @@ export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
         s.uniforms.gridSize        = { value: totalSize };
         s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
+        s.uniforms.minTerrainHeight = { value: minHeight };
+        s.uniforms.maxTerrainHeight = { value: maxHeight };
+        // Was never actually declared in the GLSL below despite TerrainGenerator.
+        // update() pushing a value into shader.uniforms.time every frame — the JS
+        // object had it, but with no matching `uniform float time;` in the source,
+        // the GPU never received it. Harmless before (nothing read it); now the
+        // sea shimmer does, so the declaration below actually matters.
+        s.uniforms.time            = { value: 0 };
 
         // ── Vertex shader ─────────────────────────────────────────────────────
         s.vertexShader = s.vertexShader.replace(
@@ -67,6 +89,9 @@ export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
             uniform vec3 cameraDirection;
             uniform vec4 reflectionParams;
             uniform vec3 sunColor;
+            uniform float minTerrainHeight;
+            uniform float maxTerrainHeight;
+            uniform float time;
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
             varying vec2 vGridPosition;
@@ -81,6 +106,28 @@ export function createTerrainMaterial(totalSize: number): MeshStandardMaterial {
 
             float calculateReflection() {
                 vec3 normalizedNormal = normalize(vWorldNormal);
+
+                // "Sea" shimmer: low/flat ground reads as a dark, still plain by
+                // default (nothing moves there — the mesh is static, so a flat
+                // area's normal never changes frame to frame). This perturbs the
+                // normal used for reflection ONLY (not vWorldNormal itself, so
+                // real diffuse/specular shading elsewhere stays geometrically
+                // correct) with a cheap time-varying wave, gated to low ground —
+                // makes the glint dance like light on water without displacing
+                // any actual vertex. Far cheaper than real ripples: those would
+                // need matching displacement in EdgeMaterial.ts too (the grid is
+                // separate static geometry — it'd visibly detach from a moving
+                // surface otherwise) plus analytic normal recomputation for
+                // correct lighting on the displaced surface.
+                float seaHeightFrac = clamp((vWorldPosition.y - minTerrainHeight) / max(1.0, maxTerrainHeight - minTerrainHeight), 0.0, 1.0);
+                float seaMask = 1.0 - smoothstep(${SEA_LEVEL_FRACTION.toFixed(2)}, ${(SEA_LEVEL_FRACTION + SEA_FADE_BAND).toFixed(2)}, seaHeightFrac);
+                if (seaMask > 0.001) {
+                    vec2 waveUV = vWorldPosition.xz * ${SEA_WAVE_FREQUENCY.toFixed(4)} + vec2(time * ${SEA_WAVE_SPEED.toFixed(2)}, time * ${(SEA_WAVE_SPEED * 0.7).toFixed(2)});
+                    float waveA = sin(waveUV.x + waveUV.y * 0.5) + sin(waveUV.x * 0.6 - waveUV.y * 1.3 + 1.7) * 0.6;
+                    float waveB = sin(waveUV.y * 1.1 - waveUV.x * 0.4 + 2.3);
+                    normalizedNormal = normalize(normalizedNormal + vec3(waveA, 0.0, waveB) * ${SEA_WAVE_STRENGTH.toFixed(2)} * seaMask);
+                }
+
                 vec3 normalizedCameraDir = normalize(cameraDirection);
 
                 float sunDot = max(0.0, dot(normalizedNormal, sunDirection));

@@ -89,7 +89,7 @@ export const EdgeParameters = {
         { heightFraction: 0.62, color: new Color(0xff1f95), intensity: 3.30 },
         { heightFraction: 0.89, color: new Color(0xff7a00), intensity: 5.00 },
     ] as EdgeColorLayer[],
-    pulseSpeed:     0.22,
-    pulseIntensity: 5.6,
-    pulseWidth:     0.090,
+    pulseSpeed:     0.11,
+    pulseIntensity: 1.6,
+    pulseWidth:     0.04,
 };

@@ -103,35 +103,12 @@ function newRandomSeed(): number {
 }
 
 export class TerrainGenerator {
-    // Defaults below are Simon's hand-tuned scene (11 Aug 2026), read off a
-    // screenshot and applied directly. Four values (baseFrequency,
-    // peakFrequency, warpFrequency, regionMaskFrequency) could NOT be read —
-    // their sliders all displayed "0.00" (see the displayDecimals() fix in
-    // TerrainControls.ts; this scene predates it) — those keep their prior
-    // values, not a guess.
-    public config: TerrainConfig = {
-        heightScale:   700,
-        persistence:   0.35,
-        basePeakBlend: 0.85,
-        baseFrequency: 0.0004,   // unreadable in source screenshot, unchanged
-        peakFrequency: 0.0008,   // unreadable in source screenshot, unchanged
-        warpAmplitude: 200,
-        warpFrequency: 0.0002,   // unreadable in source screenshot, unchanged
-        peakThreshold: 0.55,
-        baseOctaves:   4,
-        peakOctaves:   5,
-        valleyEnabled: false,
-        valleyWidth:   0.18,
-        valleyDepth:   0.50,
-        plateauEnabled: false,
-        plateauCount:   0,
-        plateauRadius:  500,
-        plateauEdge:    0.60,
-        regionMaskEnabled: false,
-        regionMaskFrequency: 0.00004,   // unreadable in source screenshot, unchanged
-        regionFlatAmplitude: 0.50,
-        regionMountainAmplitude: 1.00,
-    };
+    // Simon's preferred scene (11 Aug 2026, via full JSON export this time —
+    // no unreadable-slider guessing needed). Turns out to be exactly
+    // PRESET_DRAMATIC's values, so reference it directly rather than
+    // duplicating 20 fields — if that preset changes, this default moves
+    // with it, which is the right behaviour (both ARE "dramatic").
+    public config: TerrainConfig = { ...TerrainPresets.PRESET_DRAMATIC };
 
     private readonly gridSystem: GridSystem;
     private readonly camera: PerspectiveCamera;
@@ -161,7 +138,10 @@ export class TerrainGenerator {
         this.gridSystem = gridSystem;
         this.camera = camera;
         this.lightingSystem = lightingSystem;
-        this.seed = newRandomSeed();
+        // Simon's preferred seed (11 Aug 2026) — this is the exact map the
+        // config default above was tuned against. Regenerate (newSeed=true,
+        // below) still randomises as normal; only the initial load is pinned.
+        this.seed = 470539246;
         this.bufferPool = BufferPool.getInstance();
         this.currentBuffers = { vertex: null, color: null, uv: null, index: null, height: null };
 
@@ -390,7 +370,7 @@ export class TerrainGenerator {
         if (this.currentBuffers.index)  this.geometry.setIndex(new BufferAttribute(this.currentBuffers.index, 1));
         this.geometry.computeVertexNormals();
 
-        const mesh = new Mesh(this.geometry, createTerrainMaterial(totalSize));
+        const mesh = new Mesh(this.geometry, createTerrainMaterial(totalSize, minHeight, maxHeight));
 
         // Terrain grid — colour ramp + pulse handled entirely in EdgeMaterial shader.
         // Geometry comes from TerrainGrid (logical cells), NOT EdgesGeometry — see
