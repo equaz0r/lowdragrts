@@ -82,9 +82,24 @@ export const ReflectionParameters = {
     // aligned point. See calculateSunGlitter() in TerrainMaterial.ts and the
     // plan doc for the full reasoning (Simon's hand-annotated screenshot is
     // what settled this).
-    POSITION_FACTOR_WEIGHT: 0.15,
-    PANEL_FACTOR_WEIGHT:    0.08,
-    GRAZING_FACTOR_WEIGHT:  0.32,
+    //
+    // Cut hard (11 Aug 2026, round 8) — these three are the "ambient floor
+    // shine": NONE of them reference the sun's position at all (verified by
+    // reading the shader, not assumed). POSITION_FACTOR is a hardcoded
+    // "west is shinier" gradient that happens to coincide with the sun's
+    // fixed west orbit but doesn't read its actual height; GRAZING_FACTOR is
+    // purely camera-viewing-angle-vs-terrain-slope, so it visibly shifts as
+    // the camera orbits in a way that's easy to mistake for sun-tracking
+    // when it isn't. At their old weights (0.15/0.08/0.32) these were
+    // routinely OUTSHINING sunGlitter (weight 1.1 but a low typical value —
+    // see GLITTER_BASE_GLOW) — Simon had been reacting to THIS the whole
+    // multi-round sun-glint saga, not the sun-tracking term being iterated
+    // on. Cut ~4-5x so they read as a subtle base sheen, not the dominant
+    // visible "reflection" — sunGlitter should now clearly read as the
+    // dominant, obviously sun-tracking highlight.
+    POSITION_FACTOR_WEIGHT: 0.04,
+    PANEL_FACTOR_WEIGHT:    0.02,
+    GRAZING_FACTOR_WEIGHT:  0.06,
 
     // Sun glitter (real per-fragment Blinn-Phong specular against a noisy
     // normal — see calculateSunGlitter() in TerrainMaterial.ts). This is the
