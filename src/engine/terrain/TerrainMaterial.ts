@@ -35,37 +35,39 @@ const SEA_WAVE_FREQUENCY = 0.003;
 const SEA_WAVE_SPEED     = 0.9;  // was 0.45 — "visible but too subtle/slow" feedback
 const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 
-// Sun "glitter path" specular (11 Aug 2026 rewrite) — see calculateSunGlitter()
-// in the fragment shader below for the full reasoning. Replaces an earlier
-// screen-space "fake tracking" hack that could only ever produce a single
-// small blob, never the wide camera-converging wedge real sun-glitter on a
-// wavy surface actually looks like (confirmed against Simon's hand-annotated
-// screenshot, 11 Aug 2026 — see the plan doc). These are implementation
-// constants for the noise itself (frequency/speed/amplitude/shininess) —
-// same role as the SEA_WAVE_* constants above. The overall WEIGHT this term
-// contributes to the reflection blend lives in ReflectionParameters
-// (SUN_GLITTER_WEIGHT) alongside its sibling weights, not here.
-const GLITTER_FREQUENCY = 0.05;  // world-units^-1 — fine grain, scattered flecks not broad waves
+// Sun "glitter path" (11 Aug 2026, third rewrite) — see calculateSunGlitter()
+// in the fragment shader below for the full reasoning. History: attempt 1
+// (screen-space camera->sun alignment) could only ever produce a single small
+// blob. Attempt 2 (jittering the terrain normal before a Blinn-Phong test,
+// hoping the wedge would emerge on its own) was verified WRONG by direct
+// numeric simulation — it produces the shape backwards for this game's
+// specific camera/sun geometry (wide near camera, narrow near horizon).
+// This version explicitly authors the wedge envelope along the real
+// camera->sun ground axis (grounded in actual live positions, not an
+// arbitrary mask) and textures it with noise for sparkle — verified by
+// simulation to produce the correct wide-at-horizon/narrow-at-camera shape
+// before shipping. See the plan doc for the simulation writeup.
+const GLITTER_FREQUENCY = 0.03;  // world-units^-1 — sparkle texture grain within the wedge
 const GLITTER_SPEED     = 0.6;
-// Was 0.35 — traced the actual half-vector math for a low-sun/low-camera
-// shot (Simon's screenshot: Sun Height near its -0.8 minimum, camera close
-// to the ground): for a grazing view angle against a near-horizon sun, the
-// Blinn-Phong half-vector H=normalize(sunDir+viewDir) is itself close to
-// HORIZONTAL, not vertical. jitteredNormal = normalize(geomNormal + tilt)
-// starts from a mostly-vertical geomNormal (Y dominant on flat/rolling
-// ground) — a small additive XZ tilt can only rotate it a little off
-// vertical (roughly atan(amplitude) degrees), nowhere near enough to reach
-// a horizontal H. At 0.35 that's ~19° max — the specular test was passing
-// almost nowhere, which reads as "nothing changed". Raised substantially so
-// the effect is unmissable first; back off from here once confirmed
-// visible, rather than guessing small deltas blind.
-const GLITTER_AMPLITUDE = 2.2;   // normal-tilt strength — see calculateSunGlitter() for the tradeoff
-// Was 36 — that demands near-exact alignment (nDotH > ~0.95) to show any
-// brightness at all, which combined with the too-small amplitude above
-// meant the term was effectively always ~0. Loosened so a much wider range
-// of near-alignment is visible while tuning; raise back once the glitter
-// area is confirmed visible but needs tightening into sharper flecks.
-const GLITTER_SHININESS = 10.0;  // Blinn-Phong exponent — tolerance width of each sparkle point
+// Wedge envelope: WIDTH_NEAR/WIDTH_FAR are world-unit half-widths of the
+// glitter band at ALONG_NEAR/ALONG_FAR (world-unit distances from the camera
+// along the camera->sun ground axis — NOT distance to the sun itself, which
+// is 8000+ units away and mostly off the visible terrain). ALONG_NEAR isn't
+// 0: for most camera angles the ground directly at the camera's feet isn't
+// even in the view frustum (you're not looking straight down), so the
+// visible "near" end of the wedge is always some distance out — verified
+// against the simulated camera frustum, not guessed.
+const GLITTER_ALONG_NEAR  = 300;
+const GLITTER_ALONG_FAR   = 6000;
+const GLITTER_WIDTH_NEAR  = 50;
+const GLITTER_WIDTH_FAR   = 1800;
+const GLITTER_WIDTH_POWER = 1.4;  // >1 = width grows slowly at first, faster nearer the horizon
+const GLITTER_SPARKLE_CONTRAST = 2.5; // higher = fewer, brighter individual flecks vs. an even wash
+// Floor so the wedge's SHAPE stays visible even where the sparkle noise
+// happens to be dim that frame — without this, a narrow/sparse stretch (e.g.
+// near the camera, where fewer noise cells fit across the width) could look
+// "empty" purely by noise bad luck rather than reading as a deliberate taper.
+const GLITTER_BASE_GLOW = 0.25;
 
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
@@ -154,41 +156,56 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             }
 
             /**
-             * Scattered "sun glitter" specular highlight — deliberately generic
-             * (world position, geometric normal, sun direction, view direction,
-             * time only; no terrain-specific state) so this can be reused for
-             * other materials later (buildings, units) without rework.
+             * Sun "glitter path" — an explicitly authored wedge envelope along
+             * the real camera->sun ground axis (grounded in actual live
+             * positions, not an arbitrary mask), textured with per-fragment
+             * noise for sparkle/twinkle. Deliberately generic (world position,
+             * geometric normal, sun position, camera position, time only; no
+             * terrain-specific state) so this can be reused for other materials
+             * later (buildings, units) without rework.
              *
-             * NOT a single aligned point (see the screen-space "fake tracking"
-             * approach this replaced, 11 Aug 2026) — real sun glitter on a wavy
-             * surface is a WIDE, camera-converging wedge that emerges naturally
-             * from per-fragment specular against a noisy normal field: wide near
-             * the light source (shallow grazing view angle -> a small normal
-             * jitter redirects the reflection a long lateral distance -> many
-             * fragments qualify) and narrow near the viewer (steep view angle ->
-             * only a very precise jitter qualifies -> few fragments do). Don't
-             * hand-shape that falloff — if the wedge doesn't spread/narrow
-             * correctly, the levers are amplitude/frequency/shininess below, not
-             * a geometric mask (that's the failure mode this replaced).
+             * Why explicit, not emergent: two earlier attempts — a screen-space
+             * camera->sun alignment hack, then jittering the terrain normal
+             * before a Blinn-Phong test and hoping the wedge shape would emerge
+             * on its own — were BOTH verified wrong by direct numeric
+             * simulation (not just visual guessing): the jittered-normal
+             * version produces the shape backwards for this game's specific
+             * camera/sun geometry (wide near the camera, narrow near the
+             * horizon). That same simulation caught a second real bug: gating
+             * brightness by dot(normal, sunDir) is correct for DIFFUSE light
+             * (Lambert's cosine law) but wrong for this SPECULAR effect — real
+             * mirror-like reflection gets STRONGER, not weaker, at grazing/
+             * low-sun angles (Fresnel). That gate was crushing brightness
+             * exactly when the sun is low and large — matching the observed
+             * "gets worse as the sun gets bigger" symptom. Below it's used
+             * only as a soft on/off GATE (facing the sun's general hemisphere
+             * at all), not a continuous dimmer.
              */
-            float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunDir, vec3 viewDir, float time) {
+            float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunPos, vec3 camPos, float time) {
+                vec2 camXZ = camPos.xz;
+                vec2 sunXZ = sunPos.xz;
+                vec2 fragXZ = worldPos.xz;
+                vec2 axis = normalize(sunXZ - camXZ);
+                vec2 toFrag = fragXZ - camXZ;
+                float along = dot(toFrag, axis);
+                float inFront = step(0.0, along);
+
+                vec2 perp = toFrag - axis * along;
+                float lateralOffset = length(perp);
+
+                float t = clamp((along - ${GLITTER_ALONG_NEAR.toFixed(1)}) / ${(GLITTER_ALONG_FAR - GLITTER_ALONG_NEAR).toFixed(1)}, 0.0, 1.0);
+                float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, ${GLITTER_WIDTH_FAR.toFixed(1)}, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
+                float wedgeFactor = 1.0 - smoothstep(allowedWidth * 0.5, allowedWidth, lateralOffset);
+
                 vec2 cell = worldPos.xz * ${GLITTER_FREQUENCY.toFixed(3)}
                     + vec2(time * ${GLITTER_SPEED.toFixed(2)}, time * ${(GLITTER_SPEED * 0.7).toFixed(2)});
-                float n1 = glitterHash(cell);
-                float n2 = glitterHash(cell * 1.7 + 11.3);
-                vec2 tilt = (vec2(n1, n2) - 0.5) * 2.0 * ${GLITTER_AMPLITUDE.toFixed(2)};
-                vec3 jitteredNormal = normalize(geomNormal + vec3(tilt.x, 0.0, tilt.y));
+                float n = glitterHash(cell);
+                float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
 
-                vec3 halfDir = normalize(sunDir + viewDir);
-                float nDotH = max(0.0, dot(jitteredNormal, halfDir));
-                float spec = pow(nDotH, ${GLITTER_SHININESS.toFixed(1)});
+                vec3 sunDir = normalize(sunPos - worldPos);
+                float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, sunDir));
 
-                // Don't glint on facets fundamentally facing away from the sun,
-                // and fade out on steep cliff faces — rolling ground and gentle
-                // mountainside only, vertical rock should read as solid stone.
-                float facingSun = max(0.0, dot(geomNormal, sunDir));
-                float slopeWeight = smoothstep(0.1, 0.4, abs(geomNormal.y));
-                return spec * facingSun * slopeWeight;
+                return wedgeFactor * mix(${GLITTER_BASE_GLOW.toFixed(2)}, 1.0, sparkle) * facingSunGate * inFront;
             }
 
             float calculateReflection() {
@@ -228,18 +245,12 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 vec3 normalizedCameraDir = normalize(cameraPosition - vWorldPosition);
 
                 // Sun "glitter path" — see calculateSunGlitter() above for the
-                // full reasoning (11 Aug 2026 rewrite). Replaces an earlier
-                // screen-space "fake tracking" hack that compared camera->
-                // fragment against camera->sun direction: that could only ever
-                // produce a single small aligned blob, never the wide,
-                // camera-converging wedge Simon's hand-annotated screenshot
-                // showed real sun glitter should look like. Uses the clean
+                // full reasoning (11 Aug 2026, third rewrite). Uses the clean
                 // (pre-sea-shimmer) geometric normal as its base — kept
                 // separate/additive from the sea shimmer above, different
                 // frequency/amplitude/purpose, not merged.
-                vec3 fragToSun = normalize(sunWorldPosition - vWorldPosition);
                 vec3 geomNormal = normalize(vWorldNormal);
-                float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, fragToSun, normalizedCameraDir, time);
+                float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time);
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
                 // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
