@@ -47,8 +47,25 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // (SUN_GLITTER_WEIGHT) alongside its sibling weights, not here.
 const GLITTER_FREQUENCY = 0.05;  // world-units^-1 — fine grain, scattered flecks not broad waves
 const GLITTER_SPEED     = 0.6;
-const GLITTER_AMPLITUDE = 0.35;  // normal-tilt strength — see calculateSunGlitter() for the tradeoff
-const GLITTER_SHININESS = 36.0;  // Blinn-Phong exponent — tolerance width of each sparkle point
+// Was 0.35 — traced the actual half-vector math for a low-sun/low-camera
+// shot (Simon's screenshot: Sun Height near its -0.8 minimum, camera close
+// to the ground): for a grazing view angle against a near-horizon sun, the
+// Blinn-Phong half-vector H=normalize(sunDir+viewDir) is itself close to
+// HORIZONTAL, not vertical. jitteredNormal = normalize(geomNormal + tilt)
+// starts from a mostly-vertical geomNormal (Y dominant on flat/rolling
+// ground) — a small additive XZ tilt can only rotate it a little off
+// vertical (roughly atan(amplitude) degrees), nowhere near enough to reach
+// a horizontal H. At 0.35 that's ~19° max — the specular test was passing
+// almost nowhere, which reads as "nothing changed". Raised substantially so
+// the effect is unmissable first; back off from here once confirmed
+// visible, rather than guessing small deltas blind.
+const GLITTER_AMPLITUDE = 2.2;   // normal-tilt strength — see calculateSunGlitter() for the tradeoff
+// Was 36 — that demands near-exact alignment (nDotH > ~0.95) to show any
+// brightness at all, which combined with the too-small amplitude above
+// meant the term was effectively always ~0. Loosened so a much wider range
+// of near-alignment is visible while tuning; raise back once the glitter
+// area is confirmed visible but needs tightening into sharper flecks.
+const GLITTER_SHININESS = 10.0;  // Blinn-Phong exponent — tolerance width of each sparkle point
 
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
