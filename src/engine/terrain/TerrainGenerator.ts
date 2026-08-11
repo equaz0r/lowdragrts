@@ -370,7 +370,7 @@ export class TerrainGenerator {
         if (this.currentBuffers.index)  this.geometry.setIndex(new BufferAttribute(this.currentBuffers.index, 1));
         this.geometry.computeVertexNormals();
 
-        const mesh = new Mesh(this.geometry, createTerrainMaterial(totalSize, minHeight, maxHeight));
+        const mesh = new Mesh(this.geometry, createTerrainMaterial(totalSize, this.config.heightScale));
 
         // Terrain grid — colour ramp + pulse handled entirely in EdgeMaterial shader.
         // Geometry comes from TerrainGrid (logical cells), NOT EdgesGeometry — see
@@ -399,6 +399,14 @@ export class TerrainGenerator {
         const shader = (this.material as any)?.customShader;
         if (shader?.uniforms) {
             shader.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
+            // Was set ONCE at material creation (new Vector3(-1, 0.3, 0), a rough
+            // guess) and never touched again — the reflection math's "sun" never
+            // actually tracked the real, orbiting sun. That's why the glint didn't
+            // line up: sunDot/reflectionDir/viewDot were all computed against a
+            // direction frozen forever, unrelated to wherever the sun visually is.
+            if (shader.uniforms.sunDirection) {
+                shader.uniforms.sunDirection.value.copy(this.lightingSystem.getSunDirection());
+            }
             // Assign .value, don't replace the uniform object — swapping the
             // object every frame defeats onBeforeCompile's uniform wiring and
             // allocates one throwaway object per frame for no reason.

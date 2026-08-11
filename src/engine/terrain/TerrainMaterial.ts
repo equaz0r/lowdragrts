@@ -19,26 +19,34 @@ interface ShaderWithUniforms {
 // "Sea" shimmer — see the comment inside calculateReflection() for what this
 // actually does and why. Not exposed as sliders (yet) — revisit if it needs
 // live tuning, same as the sun scanline constants in LightingSystem.ts.
-const SEA_LEVEL_FRACTION = 0.10;  // matches EdgeParameters layer 1's heightFraction
-const SEA_FADE_BAND      = 0.05;
+//
+// Fraction is of `height / heightScale` — DELIBERATELY the same normalisation
+// TerrainGenerator's vertex-colour gradient uses (`normalizedHeight` in
+// generate()'s second pass), NOT a fraction of this generation's actual
+// min/max height range. Those two are different things: min/max-relative is
+// vulnerable to one unrelated low/high outlier elsewhere on the map skewing
+// where "low" starts, so a visually-dark (low height/heightScale) area can
+// land well outside a min/max-relative threshold band. heightScale-relative
+// always matches what actually reads as dark, regardless of where this
+// particular seed's extremes happen to fall.
+const SEA_LEVEL_FRACTION = 0.06;
+const SEA_FADE_BAND      = 0.10;
 const SEA_WAVE_FREQUENCY = 0.003;
-const SEA_WAVE_SPEED     = 0.35;
-const SEA_WAVE_STRENGTH  = 0.18;
+const SEA_WAVE_SPEED     = 0.45;
+const SEA_WAVE_STRENGTH  = 0.30;
 
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
  * Extracted from TerrainGenerator to keep material authoring self-contained.
  *
  * The compiled shader is stored as (material as any).customShader so that
- * TerrainGenerator.update() can push per-frame uniform values (camera direction,
- * time) without holding a separate reference.
+ * TerrainGenerator.update() can push per-frame uniform values (camera/sun
+ * direction, time) without holding a separate reference.
  *
- * @param minHeight/maxHeight  Current generation's height range (same values
- *   EdgeMaterial's colour ramp uses) — needed to know what counts as "low/flat"
- *   for the sea shimmer without a fixed absolute Y that wouldn't generalise
- *   across different heightScale/noise configs.
+ * @param heightScale  This generation's config.heightScale — see the sea
+ *   shimmer constants above for why this, not min/max height.
  */
-export function createTerrainMaterial(totalSize: number, minHeight: number, maxHeight: number): MeshStandardMaterial {
+export function createTerrainMaterial(totalSize: number, heightScale: number): MeshStandardMaterial {
     const material = new MeshStandardMaterial({
         vertexColors: true,
         wireframe:    TerrainParameters.USE_WIREFRAME,
@@ -56,8 +64,7 @@ export function createTerrainMaterial(totalSize: number, minHeight: number, maxH
         s.uniforms.gridSize        = { value: totalSize };
         s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
-        s.uniforms.minTerrainHeight = { value: minHeight };
-        s.uniforms.maxTerrainHeight = { value: maxHeight };
+        s.uniforms.heightScale     = { value: heightScale };
         // Was never actually declared in the GLSL below despite TerrainGenerator.
         // update() pushing a value into shader.uniforms.time every frame — the JS
         // object had it, but with no matching `uniform float time;` in the source,
@@ -89,8 +96,7 @@ export function createTerrainMaterial(totalSize: number, minHeight: number, maxH
             uniform vec3 cameraDirection;
             uniform vec4 reflectionParams;
             uniform vec3 sunColor;
-            uniform float minTerrainHeight;
-            uniform float maxTerrainHeight;
+            uniform float heightScale;
             uniform float time;
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
@@ -119,7 +125,7 @@ export function createTerrainMaterial(totalSize: number, minHeight: number, maxH
                 // separate static geometry — it'd visibly detach from a moving
                 // surface otherwise) plus analytic normal recomputation for
                 // correct lighting on the displaced surface.
-                float seaHeightFrac = clamp((vWorldPosition.y - minTerrainHeight) / max(1.0, maxTerrainHeight - minTerrainHeight), 0.0, 1.0);
+                float seaHeightFrac = clamp(vWorldPosition.y / max(1.0, heightScale), 0.0, 1.0);
                 float seaMask = 1.0 - smoothstep(${SEA_LEVEL_FRACTION.toFixed(2)}, ${(SEA_LEVEL_FRACTION + SEA_FADE_BAND).toFixed(2)}, seaHeightFrac);
                 if (seaMask > 0.001) {
                     vec2 waveUV = vWorldPosition.xz * ${SEA_WAVE_FREQUENCY.toFixed(4)} + vec2(time * ${SEA_WAVE_SPEED.toFixed(2)}, time * ${(SEA_WAVE_SPEED * 0.7).toFixed(2)});
