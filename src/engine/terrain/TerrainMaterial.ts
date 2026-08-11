@@ -35,6 +35,21 @@ const SEA_WAVE_FREQUENCY = 0.003;
 const SEA_WAVE_SPEED     = 0.9;  // was 0.45 — "visible but too subtle/slow" feedback
 const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 
+// Sun "glitter path" specular (11 Aug 2026 rewrite) — see calculateSunGlitter()
+// in the fragment shader below for the full reasoning. Replaces an earlier
+// screen-space "fake tracking" hack that could only ever produce a single
+// small blob, never the wide camera-converging wedge real sun-glitter on a
+// wavy surface actually looks like (confirmed against Simon's hand-annotated
+// screenshot, 11 Aug 2026 — see the plan doc). These are implementation
+// constants for the noise itself (frequency/speed/amplitude/shininess) —
+// same role as the SEA_WAVE_* constants above. The overall WEIGHT this term
+// contributes to the reflection blend lives in ReflectionParameters
+// (SUN_GLITTER_WEIGHT) alongside its sibling weights, not here.
+const GLITTER_FREQUENCY = 0.05;  // world-units^-1 — fine grain, scattered flecks not broad waves
+const GLITTER_SPEED     = 0.6;
+const GLITTER_AMPLITUDE = 0.35;  // normal-tilt strength — see calculateSunGlitter() for the tradeoff
+const GLITTER_SHININESS = 36.0;  // Blinn-Phong exponent — tolerance width of each sparkle point
+
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
  * Extracted from TerrainGenerator to keep material authoring self-contained.
@@ -59,11 +74,11 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
     material.onBeforeCompile = (shader) => {
         const s = shader as unknown as ShaderWithUniforms;
 
-        // Raw sun world position (not a normalized direction) — the glint
-        // calculation below needs a POINT to compute "direction from camera
-        // to sun" and "direction from this fragment to sun", not a single
-        // direction-from-origin (see the reflection function for why that
-        // distinction turned out to matter twice already this session).
+        // Raw sun world position (not a normalized direction) — the glitter
+        // calculation below needs a POINT to compute "direction from this
+        // fragment to sun" per-fragment, not a single direction-from-origin
+        // (see the reflection function for why that distinction turned out
+        // to matter twice already this session).
         s.uniforms.sunWorldPosition = { value: new Vector3() };
         // No custom camera uniform needed — see the fragment shader below,
         // this now uses Three's own built-in `cameraPosition` uniform
@@ -117,6 +132,48 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 return mix(1.0, 0.7, border) * (0.9 + 0.1 * variation);
             }
 
+            float glitterHash(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+            }
+
+            /**
+             * Scattered "sun glitter" specular highlight — deliberately generic
+             * (world position, geometric normal, sun direction, view direction,
+             * time only; no terrain-specific state) so this can be reused for
+             * other materials later (buildings, units) without rework.
+             *
+             * NOT a single aligned point (see the screen-space "fake tracking"
+             * approach this replaced, 11 Aug 2026) — real sun glitter on a wavy
+             * surface is a WIDE, camera-converging wedge that emerges naturally
+             * from per-fragment specular against a noisy normal field: wide near
+             * the light source (shallow grazing view angle -> a small normal
+             * jitter redirects the reflection a long lateral distance -> many
+             * fragments qualify) and narrow near the viewer (steep view angle ->
+             * only a very precise jitter qualifies -> few fragments do). Don't
+             * hand-shape that falloff — if the wedge doesn't spread/narrow
+             * correctly, the levers are amplitude/frequency/shininess below, not
+             * a geometric mask (that's the failure mode this replaced).
+             */
+            float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunDir, vec3 viewDir, float time) {
+                vec2 cell = worldPos.xz * ${GLITTER_FREQUENCY.toFixed(3)}
+                    + vec2(time * ${GLITTER_SPEED.toFixed(2)}, time * ${(GLITTER_SPEED * 0.7).toFixed(2)});
+                float n1 = glitterHash(cell);
+                float n2 = glitterHash(cell * 1.7 + 11.3);
+                vec2 tilt = (vec2(n1, n2) - 0.5) * 2.0 * ${GLITTER_AMPLITUDE.toFixed(2)};
+                vec3 jitteredNormal = normalize(geomNormal + vec3(tilt.x, 0.0, tilt.y));
+
+                vec3 halfDir = normalize(sunDir + viewDir);
+                float nDotH = max(0.0, dot(jitteredNormal, halfDir));
+                float spec = pow(nDotH, ${GLITTER_SHININESS.toFixed(1)});
+
+                // Don't glint on facets fundamentally facing away from the sun,
+                // and fade out on steep cliff faces — rolling ground and gentle
+                // mountainside only, vertical rock should read as solid stone.
+                float facingSun = max(0.0, dot(geomNormal, sunDir));
+                float slopeWeight = smoothstep(0.1, 0.4, abs(geomNormal.y));
+                return spec * facingSun * slopeWeight;
+            }
+
             float calculateReflection() {
                 vec3 normalizedNormal = normalize(vWorldNormal);
 
@@ -153,34 +210,19 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // "aligns only looking straight down the middle" symptom.
                 vec3 normalizedCameraDir = normalize(cameraPosition - vWorldPosition);
 
-                // Sun glint — DELIBERATELY fake, not a physical reflection.
-                // True reflect()-based specular (what used to be here: N·L and
-                // R·V against the real sun direction) is geometrically correct
-                // but does NOT project as a straight line under the sun's
-                // screen position for an off-axis camera — confirmed 11 Aug
-                // 2026 with a marked-up screenshot showing the true reflection
-                // path curving away from "under the sun" the closer to the
-                // camera it got. That's genuine reflection-law behaviour, not
-                // a bug, but it reads as "wrong" for this stylised look.
-                //
-                // Instead: compare the direction from the CAMERA to this
-                // fragment against the direction from the CAMERA to the sun.
-                // When these two directions align, this fragment is wherever
-                // the sun visually appears on screen — so the hotspot always
-                // sits at the sun's screen position by construction, regardless
-                // of true reflection geometry. sunGlintSharpness controls
-                // hotspot size (it's an exponent on a cosine-like value, not a
-                // world-unit radius); the facing-sun gate stops back-facing
-                // cliffs glinting just because they're screen-aligned with the
-                // sun despite pointing away from it.
-                vec3 camToFragment = normalize(vWorldPosition - cameraPosition);
-                vec3 camToSun = normalize(sunWorldPosition - cameraPosition);
-                float sunScreenAlignment = max(0.0, dot(camToFragment, camToSun));
-                float sunGlint = pow(sunScreenAlignment, ${ReflectionParameters.SUN_GLINT_SHARPNESS.toFixed(1)});
-
+                // Sun "glitter path" — see calculateSunGlitter() above for the
+                // full reasoning (11 Aug 2026 rewrite). Replaces an earlier
+                // screen-space "fake tracking" hack that compared camera->
+                // fragment against camera->sun direction: that could only ever
+                // produce a single small aligned blob, never the wide,
+                // camera-converging wedge Simon's hand-annotated screenshot
+                // showed real sun glitter should look like. Uses the clean
+                // (pre-sea-shimmer) geometric normal as its base — kept
+                // separate/additive from the sea shimmer above, different
+                // frequency/amplitude/purpose, not merged.
                 vec3 fragToSun = normalize(sunWorldPosition - vWorldPosition);
-                float facingSun = max(0.0, dot(normalizedNormal, fragToSun));
-                sunGlint *= pow(facingSun, ${ReflectionParameters.SUN_FACING_GATE_POWER.toFixed(2)});
+                vec3 geomNormal = normalize(vWorldNormal);
+                float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, fragToSun, normalizedCameraDir, time);
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
                 // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
@@ -198,7 +240,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
 
                 float totalFactor = pow(
-                    sunGlint       * ${ReflectionParameters.SUN_GLINT_WEIGHT.toFixed(2)} +
+                    sunGlitter     * ${ReflectionParameters.SUN_GLITTER_WEIGHT.toFixed(2)} +
                     positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(2)} +
                     panelFactor    * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(2)} +
                     grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(2)},
