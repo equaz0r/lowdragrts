@@ -135,6 +135,15 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         // far the wedge needs to reach before hitting full width depends on the
         // player's actual camera distance, which only live tuning can answer.
         s.uniforms.glitterReach    = { value: new Vector2(GLITTER_ALONG_FAR, GLITTER_WIDTH_FAR) };
+        // Debug isolation mode (11 Aug 2026, round 10) — after several rounds
+        // where it was genuinely unclear whether the visible "reflection" was
+        // sunGlitter, the ambient weighted-sum terms, or Three's own built-in
+        // PBR specular, this renders sunGlitter's raw [0,1] output directly as
+        // greyscale (bypassing diffuseColor mixing) AND forces roughness/
+        // metalness to fully non-reflective, so Three's built-in specular
+        // can't contribute anything either. What you see with this on is
+        // ONLY calculateSunGlitter()'s actual output — nothing else.
+        s.uniforms.debugShowGlitter = { value: 0 };
         // Was never actually declared in the GLSL below despite TerrainGenerator.
         // update() pushing a value into shader.uniforms.time every frame — the JS
         // object had it, but with no matching `uniform float time;` in the source,
@@ -168,9 +177,15 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             uniform float heightScale;
             uniform float time;
             uniform vec2 glitterReach; // x = along-distance for full width, y = full width itself
+            uniform float debugShowGlitter; // >0.5 = render calculateSunGlitter()'s raw output only
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
             varying vec2 vGridPosition;
+            // Written inside calculateReflection(), read in the color_fragment
+            // injection below — GLSL file-scope global, not a varying/uniform.
+            // Only exists to let the debug isolation view see sunGlitter's raw
+            // value without duplicating the calculateSunGlitter() call.
+            float debugGlitterValue = 0.0;
 
             float getPanelFactor() {
                 vec2 grid = floor(vGridPosition);
@@ -285,6 +300,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // frequency/amplitude/purpose, not merged.
                 vec3 geomNormal = normalize(vWorldNormal);
                 float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time);
+                debugGlitterValue = sunGlitter; // for the debug isolation view — see uniform declaration above
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
                 // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
@@ -327,19 +343,34 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             `#include <color_fragment>
             float reflectionStrength = calculateReflection();
             vec3 reflectionColor = sunColor * reflectionStrength;
-            diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
+            diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});
+            // Debug isolation (see uniform declaration above): overrides
+            // EVERYTHING computed above with sunGlitter's raw [0,1] value as
+            // flat greyscale. Comes AFTER the normal mixing on purpose — this
+            // always wins when the toggle is on, regardless of what the rest
+            // of calculateReflection() decided.
+            if (debugShowGlitter > 0.5) {
+                diffuseColor.rgb = vec3(debugGlitterValue);
+            }`
         );
 
         s.fragmentShader = s.fragmentShader.replace(
             '#include <roughnessmap_fragment>',
             `#include <roughnessmap_fragment>
-            roughnessFactor = mix(reflectionParams.y, 0.1, reflectionStrength);`
+            roughnessFactor = mix(reflectionParams.y, 0.1, reflectionStrength);
+            // Force fully non-reflective in debug mode too — otherwise Three's
+            // own built-in specular highlight (see LightingConfig.ts's
+            // REFLECTION_PARAMS comment) would still show up ON TOP of the
+            // greyscale debug view and defeat the whole point of isolating
+            // sunGlitter.
+            if (debugShowGlitter > 0.5) { roughnessFactor = 1.0; }`
         );
 
         s.fragmentShader = s.fragmentShader.replace(
             '#include <metalnessmap_fragment>',
             `#include <metalnessmap_fragment>
-            metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);`
+            metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);
+            if (debugShowGlitter > 0.5) { metalnessFactor = 0.0; }`
         );
 
         (material as any).customShader = s;

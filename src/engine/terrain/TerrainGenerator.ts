@@ -156,6 +156,11 @@ export class TerrainGenerator {
             if (shader?.uniforms?.glitterReach) {
                 shader.uniforms.glitterReach.value.set(reach, width);
             }
+        }, (show) => {
+            const shader = (this.material as any)?.customShader;
+            if (shader?.uniforms?.debugShowGlitter) {
+                shader.uniforms.debugShowGlitter.value = show ? 1 : 0;
+            }
         });
 
         this.initialize();

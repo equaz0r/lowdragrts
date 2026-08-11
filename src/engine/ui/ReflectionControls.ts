@@ -20,6 +20,7 @@ export class ReflectionControls {
     private container: HTMLDivElement;
     private onUpdate: (params: Vector4) => void;
     private onGlitterUpdate: (reach: number, width: number) => void;
+    private onDebugGlitterToggle: (show: boolean) => void;
     private currentParams: Vector4;
     // Defaults match GLITTER_ALONG_FAR/GLITTER_WIDTH_FAR's initial uniform
     // values in TerrainMaterial.ts — see that file for why these two
@@ -34,9 +35,11 @@ export class ReflectionControls {
         onUpdate: (params: Vector4) => void,
         lightingSystem: LightingSystem,
         onGlitterUpdate: (reach: number, width: number) => void = () => {},
+        onDebugGlitterToggle: (show: boolean) => void = () => {},
     ) {
         this.onUpdate = onUpdate;
         this.onGlitterUpdate = onGlitterUpdate;
+        this.onDebugGlitterToggle = onDebugGlitterToggle;
         this.lightingSystem = lightingSystem;
         this.currentParams = ReflectionParameters.REFLECTION_PARAMS.clone();
 
@@ -228,6 +231,48 @@ export class ReflectionControls {
             this.currentGlitterWidth = value;
             this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
         }, 'World-unit full width of the sun glitter wedge at its widest (near the horizon)');
+
+        // Debug isolation toggle (11 Aug 2026, round 10) — after several
+        // rounds where it was genuinely unclear whether the visible
+        // "reflection" was sunGlitter, the ambient weighted-sum terms, or
+        // Three's own built-in specular, this renders ONLY sunGlitter's raw
+        // output as flat greyscale, with roughness/metalness forced fully
+        // non-reflective so nothing else can contribute. Not part of
+        // ReflectionSettings — deliberately not saved/exported, it's a
+        // debugging aid, not a scene setting.
+        this.createCheckbox('Debug: Glitter Only', false, (checked) => {
+            this.onDebugGlitterToggle(checked);
+        }, 'Shows ONLY calculateSunGlitter()\'s raw output as greyscale — nothing else (no ambient shine, no Three.js built-in specular) can contribute while this is on');
+    }
+
+    private createCheckbox(
+        label: string,
+        checked: boolean,
+        onChange: (checked: boolean) => void,
+        tooltip?: string
+    ): void {
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.marginBottom = '3px';
+        container.style.fontSize = '11px';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = checked;
+        checkbox.style.marginRight = '4px';
+        checkbox.addEventListener('change', () => onChange(checkbox.checked));
+        container.appendChild(checkbox);
+
+        const labelElement = document.createElement('span');
+        labelElement.textContent = label;
+        if (tooltip) {
+            labelElement.title = tooltip;
+            labelElement.style.cursor = 'help';
+        }
+        container.appendChild(labelElement);
+
+        this.container.appendChild(container);
     }
 
     // ── Export / Import ─────────────────────────────────────────────────────
