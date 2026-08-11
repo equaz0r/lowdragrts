@@ -67,9 +67,36 @@ export const ReflectionParameters = {
     // toward 0); values near 0 make reflection ≈1.0 (max) almost everywhere
     // regardless of angle. "Reflection Power" in the UI slider reads
     // backwards from this at the low end — turning it down maxes reflection
-    // out, not off. Value below (0.90) is Simon's hand-tuned scene, 11 Aug
-    // 2026 — still comfortably clear of the near-0 collapse zone.
-    REFLECTION_PARAMS: new Vector4(0.61, 0.47, 0.30, 0.90),
+    // out, not off.
+    //
+    // x/y found and fixed 11 Aug 2026, round 9 — the REAL resolution to the
+    // sun-glint saga. These are the BASELINE metalness/roughness — i.e. what
+    // the material looks like when reflectionStrength (sunGlitter etc.) is
+    // LOW, everywhere outside the glitter wedge. At the old values
+    // (metalness 0.61, roughness 0.47) the terrain was still glossy/metallic
+    // enough for THREE.JS'S OWN BUILT-IN PBR SPECULAR HIGHLIGHT (from the
+    // real sunLight DirectionalLight — Three's standard lighting code,
+    // completely separate from anything in TerrainMaterial.ts's custom
+    // onBeforeCompile injection) to produce a real, visible, physically-
+    // correct-but-off-axis-misaligned highlight ALL BY ITSELF — the exact
+    // same "smooth surface -> single misaligned point" issue solved for the
+    // CUSTOM sunGlitter term at the very start of this session, except nothing
+    // built this session ever touched THIS one, since it's Three's own code,
+    // not mine. This was almost certainly the actual "reflection that
+    // doesn't track the sun" Simon had been reporting the ENTIRE session —
+    // confirmed empirically (not just theorised): setting Roughness to 1.0
+    // live made the mystery streak disappear.
+    //
+    // Fix: raise the BASELINE roughness/lower baseline metalness so the
+    // material is near-matte/non-metallic (Three's built-in highlight
+    // minimal-to-invisible) everywhere OUTSIDE the glitter wedge. This does
+    // NOT reduce shininess INSIDE the wedge — mix(baseline, 0.1,
+    // reflectionStrength) still reaches full gloss (0.1 roughness / 1.0
+    // metalness) wherever reflectionStrength climbs high, i.e. exactly where
+    // sunGlitter says it should. Properly GATES all shininess behind
+    // sunGlitter now, rather than shininess being an ambient constant that
+    // sunGlitter merely adds on top of.
+    REFLECTION_PARAMS: new Vector4(0.1, 0.88, 0.30, 0.90),
     SUN_INTENSITY:     0.5,
 
     // VIEW_FACTOR_WEIGHT/SUN_FACTOR_WEIGHT/SUN_FACTOR_POWER/VIEW_FACTOR_POWER
