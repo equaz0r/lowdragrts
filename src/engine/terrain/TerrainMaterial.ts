@@ -5,7 +5,7 @@ import {
     Vector3,
     Vector2,
 } from 'three';
-import { TerrainParameters } from '../config/TerrainConfig';
+import { TerrainParameters, GridParameters } from '../config/TerrainConfig';
 import { ReflectionParameters } from '../config/LightingConfig';
 
 // Three.js narrows onBeforeCompile's shader argument to WebGLProgramParameters
@@ -72,10 +72,26 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // actually looks like) needs FLAT, COHERENT patches, not per-pixel noise —
 // same fix as getPanelFactor() already uses above (floor() before hashing,
 // so a whole cell shares one value instead of every fragment rolling its
-// own). GLITTER_FREQUENCY's inverse (~33 world units) is now literally the
-// shard size.
-const GLITTER_FREQUENCY = 0.03;  // world-units^-1 — inverse of this = shard size
-const GLITTER_SPEED     = 0.6;
+// own). First attempt at that fix (still 12 Aug 2026) floored an arbitrary
+// ~33-unit coordinate — Simon immediately flagged it as "not aligned,
+// looks projected on top of the existing grid, colour doesn't match": an
+// unrelated cell size, on top of a coordinate that SCROLLS over time (the
+// old animation technique), can never land on the real grid even by
+// accident. Fixed properly: shard cells now snap EXACTLY to the same
+// GridParameters.CELL_SIZE cells the visible neon grid itself is drawn on
+// (same +gridSize/2 half-offset GridSystem.worldToCell() uses — the grid's
+// origin isn't cell-aligned with world (0,0) otherwise, since 4000/64 isn't
+// an integer). Each glint is now literally "this specific floor panel is
+// catching the light", not a coincidentally-similar but separate texture.
+const GLITTER_SHARD_SIZE = GridParameters.CELL_SIZE; // world units — same panels the neon grid draws
+// Animation: NOT a scrolling offset any more (that's what broke grid
+// alignment above — sliding the sample coordinate over time inherently
+// drags shard boundaries away from the fixed grid cells they're now
+// supposed to align with). Instead, time is quantized into discrete steps;
+// every step, ALL shards simultaneously re-roll to new independent random
+// values (the hash input shifts by a per-step offset), giving a twinkle —
+// panels flicker on/off — while cell BOUNDARIES themselves never move.
+const GLITTER_TWINKLE_INTERVAL = 2.0; // seconds between re-rolls
 // Thin dark seam between shards (in cell-fraction units, 0-0.5) — the visual
 // cue that makes them read as discrete tiles/shards rather than one
 // undifferentiated blob whenever several adjacent cells happen to light up
@@ -191,6 +207,13 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             uniform vec3 sunColor;
             uniform float heightScale;
             uniform float time;
+            // Was set from JS (s.uniforms.gridSize) but never actually
+            // declared here — same class of bug as the time uniform's
+            // history above: the JS object had a value, but with no matching
+            // GLSL declaration the GPU never received it. Harmless before
+            // (nothing read it); calculateSunGlitter()'s shard-grid alignment
+            // needs it now (12 Aug 2026).
+            uniform float gridSize;
             uniform vec2 glitterReach; // x = along-distance for full width, y = full width itself
             uniform float debugShowGlitter; // >0.5 = render calculateSunGlitter()'s raw output only
             varying vec3 vWorldPosition;
@@ -240,7 +263,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
              * only as a soft on/off GATE (facing the sun's general hemisphere
              * at all), not a continuous dimmer.
              */
-            float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunPos, vec3 camPos, float time) {
+            float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunPos, vec3 camPos, float time, float mapSize) {
                 vec2 camXZ = camPos.xz;
                 vec2 sunXZ = sunPos.xz;
                 vec2 fragXZ = worldPos.xz;
@@ -261,18 +284,26 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, glitterReach.y, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
                 float wedgeFactor = 1.0 - smoothstep(allowedWidth * 0.5, allowedWidth, lateralOffset);
 
-                vec2 cell = worldPos.xz * ${GLITTER_FREQUENCY.toFixed(3)}
-                    + vec2(time * ${GLITTER_SPEED.toFixed(2)}, time * ${(GLITTER_SPEED * 0.7).toFixed(2)});
-                // Floor BEFORE hashing — every fragment inside the same cell
-                // gets the SAME hash value, so a whole shard lights up flat
-                // and uniform instead of each pixel rolling independently
-                // (the literal cause of the "TV static" look). Cells "pop" to
-                // a new value whenever the animated scroll crosses a
-                // boundary — that's the twinkle, not per-frame per-pixel
-                // flicker.
-                vec2 shardCell = floor(cell);
-                vec2 shardFrac = fract(cell);
-                float n = glitterHash(shardCell);
+                // Grid-aligned cell coordinate — SAME +mapSize/2 half-offset
+                // GridSystem.worldToCell() uses (the grid's own origin isn't
+                // aligned to world (0,0) otherwise: mapSize/2 / CELL_SIZE
+                // isn't an integer at the default 8000/64). Floor BEFORE
+                // hashing — every fragment inside the same cell gets the SAME
+                // hash value, so a whole shard lights up flat and uniform
+                // instead of each pixel rolling independently (the literal
+                // cause of the "TV static" look), and now lands on the exact
+                // same panel the visible neon grid draws.
+                vec2 gridAligned = (worldPos.xz + vec2(mapSize * 0.5)) / ${GLITTER_SHARD_SIZE.toFixed(1)};
+                vec2 shardCell = floor(gridAligned);
+                vec2 shardFrac = fract(gridAligned);
+                // Twinkle via quantized time, NOT a scrolling coordinate — a
+                // scroll would immediately drag shard boundaries away from
+                // the fixed grid cells above. Every GLITTER_TWINKLE_INTERVAL
+                // seconds, ALL shards simultaneously re-roll (the hash input
+                // shifts by a per-step offset) while cell BOUNDARIES never
+                // move.
+                float twinkleStep = floor(time / ${GLITTER_TWINKLE_INTERVAL.toFixed(2)});
+                float n = glitterHash(shardCell + vec2(twinkleStep * 17.0, twinkleStep * 31.0));
                 float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
 
                 // Distance from this fragment to the nearest cell edge, on
@@ -333,7 +364,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // separate/additive from the sea shimmer above, different
                 // frequency/amplitude/purpose, not merged.
                 vec3 geomNormal = normalize(vWorldNormal);
-                float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time);
+                float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time, gridSize);
                 debugGlitterValue = sunGlitter; // for the debug isolation view — see uniform declaration above
 
                 float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};

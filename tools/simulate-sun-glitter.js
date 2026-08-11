@@ -37,8 +37,10 @@ function glitterHash(p) { return fract(Math.sin(dot2(p, [127.1, 311.7])) * 43758
 // (live-adjustable via ReflectionControls' "Sun Glitter" sliders in the
 // real game) — override them here if you're simulating a specific slider
 // position rather than the defaults.
-const GLITTER_FREQUENCY = 0.03;
-const GLITTER_SPEED = 0.6;
+// --- Keep in sync with GridParameters in src/engine/config/TerrainConfig.ts ---
+const MAP_SIZE = 8000;         // GridParameters.TOTAL_SIZE
+const GLITTER_SHARD_SIZE = 64; // GridParameters.CELL_SIZE — shards snap to the real grid now
+const GLITTER_TWINKLE_INTERVAL = 2.0;
 const GLITTER_ALONG_NEAR = 250;
 const GLITTER_ALONG_FAR = 2500;
 const GLITTER_WIDTH_NEAR = 70;
@@ -78,12 +80,19 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
     const allowedWidth = mix(GLITTER_WIDTH_NEAR, GLITTER_WIDTH_FAR, Math.pow(t, GLITTER_WIDTH_POWER));
     const wedgeFactor = 1.0 - smoothstep(allowedWidth*0.5, allowedWidth, lateralOffset);
 
-    const cell = [worldPos[0]*GLITTER_FREQUENCY + time*GLITTER_SPEED, worldPos[2]*GLITTER_FREQUENCY + time*GLITTER_SPEED*0.7];
-    // Floor before hashing (12 Aug 2026) — flat per-cell shards, not
-    // per-fragment static. See TerrainMaterial.ts for the full reasoning.
-    const shardCell = [Math.floor(cell[0]), Math.floor(cell[1])];
-    const shardFrac = [cell[0]-shardCell[0], cell[1]-shardCell[1]];
-    const n = glitterHash(shardCell);
+    // Grid-aligned cell (12 Aug 2026) — snaps to the exact same cells the
+    // visible neon grid draws (GridSystem.worldToCell()'s +mapSize/2 half-
+    // offset), not an arbitrary unrelated size. Twinkle via quantized time
+    // (all shards re-roll together every GLITTER_TWINKLE_INTERVAL seconds),
+    // NOT a scrolling coordinate — a scroll would drag shard boundaries away
+    // from the fixed grid cells. See TerrainMaterial.ts for the full story
+    // (first attempt used an arbitrary scrolling ~33-unit cell — Simon
+    // immediately flagged it as visibly unaligned with the real grid).
+    const gridAligned = [(worldPos[0] + MAP_SIZE*0.5) / GLITTER_SHARD_SIZE, (worldPos[2] + MAP_SIZE*0.5) / GLITTER_SHARD_SIZE];
+    const shardCell = [Math.floor(gridAligned[0]), Math.floor(gridAligned[1])];
+    const shardFrac = [gridAligned[0]-shardCell[0], gridAligned[1]-shardCell[1]];
+    const twinkleStep = Math.floor(time / GLITTER_TWINKLE_INTERVAL);
+    const n = glitterHash([shardCell[0] + twinkleStep*17.0, shardCell[1] + twinkleStep*31.0]);
     let sparkle = Math.pow(n, GLITTER_SPARKLE_CONTRAST);
     const edgeDist = [Math.min(shardFrac[0], 1-shardFrac[0]), Math.min(shardFrac[1], 1-shardFrac[1])];
     const distToEdge = Math.min(edgeDist[0], edgeDist[1]);
