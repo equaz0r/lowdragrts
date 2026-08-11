@@ -45,6 +45,7 @@ const GLITTER_WIDTH_NEAR = 70;
 const GLITTER_WIDTH_FAR = 1200;
 const GLITTER_WIDTH_POWER = 0.8;
 const GLITTER_SPARKLE_CONTRAST = 2.5;
+const GLITTER_SHARD_SEAM = 0.06;
 const GLITTER_BASE_GLOW = 0.25;
 
 // --- Keep in sync with LightingSystem.ts's updateSunPosition() ---
@@ -78,8 +79,16 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
     const wedgeFactor = 1.0 - smoothstep(allowedWidth*0.5, allowedWidth, lateralOffset);
 
     const cell = [worldPos[0]*GLITTER_FREQUENCY + time*GLITTER_SPEED, worldPos[2]*GLITTER_FREQUENCY + time*GLITTER_SPEED*0.7];
-    const n = glitterHash(cell);
-    const sparkle = Math.pow(n, GLITTER_SPARKLE_CONTRAST);
+    // Floor before hashing (12 Aug 2026) — flat per-cell shards, not
+    // per-fragment static. See TerrainMaterial.ts for the full reasoning.
+    const shardCell = [Math.floor(cell[0]), Math.floor(cell[1])];
+    const shardFrac = [cell[0]-shardCell[0], cell[1]-shardCell[1]];
+    const n = glitterHash(shardCell);
+    let sparkle = Math.pow(n, GLITTER_SPARKLE_CONTRAST);
+    const edgeDist = [Math.min(shardFrac[0], 1-shardFrac[0]), Math.min(shardFrac[1], 1-shardFrac[1])];
+    const distToEdge = Math.min(edgeDist[0], edgeDist[1]);
+    const shardMask = smoothstep(0, GLITTER_SHARD_SEAM, distToEdge);
+    sparkle *= shardMask;
 
     const sunDir = norm3(sub3(sunPos, worldPos));
     const facingSunGate = smoothstep(-0.05, 0.05, dot3(geomNormal, sunDir));

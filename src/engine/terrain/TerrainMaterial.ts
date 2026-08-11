@@ -66,8 +66,23 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // getting these exactly right depends on Simon's actual play-camera
 // distance, which live sliders answer far faster than another guess-and-
 // ship round-trip.
-const GLITTER_FREQUENCY = 0.03;  // world-units^-1 — sparkle texture grain within the wedge
+// Was continuous per-fragment hash noise — reads as literal TV static (Simon,
+// 12 Aug 2026): unstructured pixel-level randomness, no coherent shape at
+// all. Real per-facet glinting (what "shards"/"grid squares catching light"
+// actually looks like) needs FLAT, COHERENT patches, not per-pixel noise —
+// same fix as getPanelFactor() already uses above (floor() before hashing,
+// so a whole cell shares one value instead of every fragment rolling its
+// own). GLITTER_FREQUENCY's inverse (~33 world units) is now literally the
+// shard size.
+const GLITTER_FREQUENCY = 0.03;  // world-units^-1 — inverse of this = shard size
 const GLITTER_SPEED     = 0.6;
+// Thin dark seam between shards (in cell-fraction units, 0-0.5) — the visual
+// cue that makes them read as discrete tiles/shards rather than one
+// undifferentiated blob whenever several adjacent cells happen to light up
+// together. Same purpose as getPanelFactor()'s border, done as a proper
+// distance-to-nearest-edge check rather than copying that function's exact
+// (slightly odd) formula.
+const GLITTER_SHARD_SEAM = 0.06;
 // Wedge envelope: WIDTH_NEAR/WIDTH_FAR are world-unit half-widths of the
 // glitter band at ALONG_NEAR/ALONG_FAR (world-unit distances from the camera
 // along the camera->sun ground axis — NOT distance to the sun itself, which
@@ -248,8 +263,27 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
 
                 vec2 cell = worldPos.xz * ${GLITTER_FREQUENCY.toFixed(3)}
                     + vec2(time * ${GLITTER_SPEED.toFixed(2)}, time * ${(GLITTER_SPEED * 0.7).toFixed(2)});
-                float n = glitterHash(cell);
+                // Floor BEFORE hashing — every fragment inside the same cell
+                // gets the SAME hash value, so a whole shard lights up flat
+                // and uniform instead of each pixel rolling independently
+                // (the literal cause of the "TV static" look). Cells "pop" to
+                // a new value whenever the animated scroll crosses a
+                // boundary — that's the twinkle, not per-frame per-pixel
+                // flicker.
+                vec2 shardCell = floor(cell);
+                vec2 shardFrac = fract(cell);
+                float n = glitterHash(shardCell);
                 float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
+
+                // Distance from this fragment to the nearest cell edge, on
+                // whichever axis is closer — 0 exactly on the seam, 0.5 at
+                // the shard's centre. Darkening near the seam is what makes
+                // adjacent lit shards read as separate tiles instead of
+                // fusing into one shapeless patch.
+                vec2 edgeDist = min(shardFrac, 1.0 - shardFrac);
+                float distToEdge = min(edgeDist.x, edgeDist.y);
+                float shardMask = smoothstep(0.0, ${GLITTER_SHARD_SEAM.toFixed(2)}, distToEdge);
+                sparkle *= shardMask;
 
                 vec3 sunDir = normalize(sunPos - worldPos);
                 float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, sunDir));
