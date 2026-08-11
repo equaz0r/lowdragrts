@@ -398,7 +398,11 @@ export class TerrainGenerator {
     public update(time: number): void {
         const shader = (this.material as any)?.customShader;
         if (shader?.uniforms) {
-            shader.uniforms.cameraDirection.value.copy(this.camera.position).normalize();
+            // No cameraDirection push needed any more — TerrainMaterial.ts now
+            // uses Three's own built-in `cameraPosition` uniform (auto-updated
+            // every frame) and computes the view direction per-fragment. The
+            // old single global "direction from origin to camera" was the
+            // actual root cause of the reflection/sun misalignment bug.
             // Was set ONCE at material creation (new Vector3(-1, 0.3, 0), a rough
             // guess) and never touched again — the reflection math's "sun" never
             // actually tracked the real, orbiting sun. That's why the glint didn't

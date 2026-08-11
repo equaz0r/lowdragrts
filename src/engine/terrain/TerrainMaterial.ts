@@ -32,8 +32,8 @@ interface ShaderWithUniforms {
 const SEA_LEVEL_FRACTION = 0.06;
 const SEA_FADE_BAND      = 0.10;
 const SEA_WAVE_FREQUENCY = 0.003;
-const SEA_WAVE_SPEED     = 0.45;
-const SEA_WAVE_STRENGTH  = 0.30;
+const SEA_WAVE_SPEED     = 0.9;  // was 0.45 — "visible but too subtle/slow" feedback
+const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
@@ -60,7 +60,10 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         const s = shader as unknown as ShaderWithUniforms;
 
         s.uniforms.sunDirection    = { value: new Vector3(-1, 0.3, 0).normalize() };
-        s.uniforms.cameraDirection = { value: new Vector3() };
+        // No custom camera uniform needed — see the fragment shader below,
+        // this now uses Three's own built-in `cameraPosition` uniform
+        // (declared by #include <common> itself, populated automatically
+        // every frame, no manual push required).
         s.uniforms.gridSize        = { value: totalSize };
         s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
@@ -93,7 +96,6 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             '#include <common>',
             `#include <common>
             uniform vec3 sunDirection;
-            uniform vec3 cameraDirection;
             uniform vec4 reflectionParams;
             uniform vec3 sunColor;
             uniform float heightScale;
@@ -134,7 +136,17 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                     normalizedNormal = normalize(normalizedNormal + vec3(waveA, 0.0, waveB) * ${SEA_WAVE_STRENGTH.toFixed(2)} * seaMask);
                 }
 
-                vec3 normalizedCameraDir = normalize(cameraDirection);
+                // Per-fragment view direction — camera's built-in world position
+                // (Three's own uniform, declared by #include <common> above) minus
+                // THIS fragment's world position. Was normalize(cameraPosition) alone
+                // — i.e. direction from the ORIGIN to the camera, one single vector
+                // reused for every fragment on the whole 8000-unit map regardless of
+                // where that fragment actually is. That only happens to be correct
+                // for fragments AT the origin; everywhere else the reflection glint
+                // pointed increasingly wrong, worse the further off-centre or the
+                // further from the origin a fragment was — which is exactly the
+                // "aligns only looking straight down the middle" symptom.
+                vec3 normalizedCameraDir = normalize(cameraPosition - vWorldPosition);
 
                 float sunDot = max(0.0, dot(normalizedNormal, sunDirection));
                 float sunFactor = pow(sunDot, ${ReflectionParameters.SUN_FACTOR_POWER.toFixed(2)});
