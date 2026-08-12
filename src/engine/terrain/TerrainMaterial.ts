@@ -305,7 +305,14 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             '#include <begin_vertex>',
             `#include <begin_vertex>
             vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-            vWorldNormal = normalize(normalMatrix * normal);
+            // normalMatrix transforms object-space normals into VIEW space.
+            // Every direction used by the custom reflection code below is in
+            // WORLD space (sunWorldPosition/world position/cameraPosition),
+            // so comparing normalMatrix*normal with them made the glint rotate
+            // incorrectly with the camera. Three's common shader chunk already
+            // provides the correct inverse view-direction transform.
+            vec3 viewSpaceNormal = normalize(normalMatrix * normal);
+            vWorldNormal = inverseTransformDirection(viewSpaceNormal, viewMatrix);
             vGridPosition = position.xz / 100.0;`
         );
 
