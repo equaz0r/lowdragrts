@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Build outputs
 dist/
@@ -26,6 +25,7 @@ src/archive/
 
 # Build artifacts
 public/bundle.js
+public/bundle.js.LICENSE.txt
 
 # Claude Code
 .claude/

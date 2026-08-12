@@ -955,6 +955,8 @@ Never sort only heights separately from their colours.
 
 ### 14.8 Add project verification
 
+**Status: completed on `feature/phase-2-5-stabilisation`. `npm run verify` is the required pre-commit/merge check.**
+
 Add:
 
 - `typecheck`

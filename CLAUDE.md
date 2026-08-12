@@ -226,7 +226,11 @@ npm install       # First time setup
 npm start         # Webpack dev server — game at http://localhost:9000
                   # Noise visualiser at http://localhost:9000/noise-visualizer.html
 npm run build     # Production bundle → public/bundle.js
-npx tsc --noEmit -p tsconfig.json   # Typecheck only (no test/lint scripts exist yet — Phase 3 chore)
+npm run typecheck # Typecheck all current source
+npm run typecheck:sim # Typecheck the isolated simulation tree only
+npm test          # Run Vitest once
+npm run test:watch # Run Vitest in watch mode
+npm run verify    # Required full gate: both typechecks → tests → production build
 ```
 
 ## Phase Plan
@@ -266,6 +270,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Corrected the performance overlay: Three.js `renderer.info.memory` geometry/texture values are now labelled as resource counts instead of being multiplied by 1 KiB and presented as invented GPU-memory megabytes. |
 | 12 Aug 2026 | Removed ambiguous grid configuration and dead runtime mutation APIs. World size, build-cell size/count, and height-sample spacing/count now have explicit names; counts are derived from sizes. The current renderer asserts its temporary one-height-segment-per-build-cell requirement, leaving a clear seam for denser deformable terrain later. |
 | 12 Aug 2026 | Fixed edge colour-ramp ordering: defaults now progress 8%→10% instead of 10%→8%, layer thresholds are normalized as complete model state on import/material creation, and live sliders cannot cross neighbouring thresholds. |
+| 12 Aug 2026 | Added the project verification gate: dedicated full/sim typechecks, Vitest run/watch commands, production build mode, and `npm run verify`. Initial 19-test suite covers HeightMap boundaries, grid conversions, edge-ramp invariants, deterministic RNG golden output/state resume, and numeric bounds. `package-lock.json` is now tracked for repeatable installs. |
 
 ---
 *Update this file at the end of every coding session.*
