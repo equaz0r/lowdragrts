@@ -53,6 +53,8 @@ src/
     │   │                           #   buffer management, update tick, presets
     │   ├── TerrainGrid.ts          # THE terrain grid — one geometry, feeds EdgeMaterial for the
     │   │                           #   visual AND the buildability data (isFootprintBuildable)
+    │   ├── TerrainChunk.ts         # Closes the heightfield with 4 segmented boundary walls + a
+    │   │                           #   flat underside below the generation's lowest point
     │   ├── TerrainMaterial.ts      # Reflection + panel shader (onBeforeCompile factory) + "sea"
     │   │                           #   shimmer (normal perturbation, not real waves — see below)
     │   ├── EdgeMaterial.ts         # 5-layer colour ramp + electric pulse shader
@@ -118,6 +120,7 @@ tools/
 - ✅ Region-masked flatland/mountain zoning — coherent flat regions with mountains rising out of them, not uniform ruggedness. On by default (`regionMaskEnabled`), off in the Rolling preset.
 - ✅ Plateau build-sites — deterministic (seeded `Rng`) flat circular sites, `TerrainControls` sliders, `getPlateauSites()`
 - ✅ Unified terrain grid (`TerrainGrid.ts`) — one geometry drives both the neon visual and buildability
+- ✅ Closed terrain chunk (`TerrainChunk.ts`) — the outer height samples form four solid walls down to a flat underside; separate child geometry keeps future boundary-deformation updates small
 - ✅ Dynamic lighting — flat billboarded sun disc (not a sphere, avoids perspective-curved scanlines), sky gradient, halo, retro scanlines, day/night
 - ✅ Terrain reflection shader — tinted by the sun's live colour
 - ✅ Edge grid shader — 5-layer GPU height-ramp (synthwave: navy→purple→pink→orange) + animated electric pulse
@@ -199,7 +202,7 @@ Three tiers, cheapest to most expensive — only the first is built:
 - `LightingSystem` and `PerformanceMonitor` are singletons — always use `getInstance()`, never `new` directly
 - Both clear static instance in `dispose()` so HMR creates a fresh instance correctly
 - `Game.dispose()` is idempotent, stops animate() via its `disposed` flag, removes the resize listener, disposes OrbitControls and guards DOM removal. `TerrainGenerator.dispose()` also clears the singleton BufferPool.
-- Terrain regeneration disposes the root surface material plus the child neon-grid geometry/material; the root geometry's pooled typed arrays are released separately by `disposeGeometry()`. Keep that ownership split to avoid grid leaks or returning live surface buffers to the pool.
+- Terrain regeneration disposes the root surface material plus both child meshes (neon grid and terrain-chunk walls/base), including their geometry/material; the root geometry's pooled typed arrays are released separately by `disposeGeometry()`. Keep that ownership split to avoid child leaks or returning live surface buffers to the pool.
 
 ## HeightMap API (src/engine/terrain/HeightMap.ts)
 All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Available after first `generate()`, replaced on each `regenerate()` — **no change notification**, don't cache the reference across a regen.
@@ -279,6 +282,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Added clearly labelled sharing controls: visible/loadable 10-digit-max Terrain Seed, Lighting Code and Full Scene Code alongside the existing readable JSON. Codes have self-identifying version prefixes and reversible payloads; seed display follows regeneration/import. |
 | 12 Aug 2026 | Fixed share-code visibility after live review: Lighting and Full Scene fields now show their current codes immediately instead of placeholder text, and stay current after terrain regeneration, JSON/code loads, and lighting/grid slider changes. Copy still regenerates the value defensively. |
 | 12 Aug 2026 | Added a shared roll-up/down arrow to every debug panel. Collapsing hides everything except the draggable title bar, persists per panel across reloads, and Reset Panel Layout clears both positions and collapsed states. |
+| 12 Aug 2026 | Closed the terrain into a solid-looking chunk: four segmented side walls follow the exact boundary height samples and descend to a flat underside below the generation minimum. Kept it as disposable child geometry so future deformation only needs to update it when damage reaches a map edge; added geometry/winding tests. |
 
 ---
 *Update this file at the end of every coding session.*

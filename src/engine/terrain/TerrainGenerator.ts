@@ -13,6 +13,7 @@ import { HeightMap } from './HeightMap';
 import { createTerrainMaterial } from './TerrainMaterial';
 import { createEdgeMaterial, EdgeUniforms } from './EdgeMaterial';
 import { createTerrainGridMesh, BuildableCells } from './TerrainGrid';
+import { createTerrainChunkMesh } from './TerrainChunk';
 import { NoiseSampler } from '../utils/NoiseSampler';
 import { GridParameters, TerrainParameters } from '../config/TerrainConfig';
 import { ReflectionControls } from '../ui/ReflectionControls';
@@ -453,6 +454,20 @@ export class TerrainGenerator {
             this.config.heightScale,
             this.reflectionState,
         ));
+
+        // Close the heightfield into a solid-looking terrain chunk. The child
+        // walls use the exact outer height samples, while the flat underside
+        // sits below this generation's lowest point. Keeping this separate
+        // from the pooled surface geometry makes future deformation updates
+        // straightforward: only boundary damage needs to update the walls.
+        if (this.currentBuffers.height) {
+            mesh.add(createTerrainChunkMesh(
+                this.currentBuffers.height,
+                divisions,
+                totalSize,
+                minHeight,
+            ));
+        }
 
         // Terrain grid — colour ramp + pulse handled entirely in EdgeMaterial shader.
         // Geometry comes from TerrainGrid (logical cells), NOT EdgesGeometry — see

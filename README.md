@@ -2,11 +2,11 @@
 
 A heightmap-based real-time strategy game inspired by Total Annihilation, built with TypeScript, Three.js, and Webpack. Runs entirely in the browser. Hobby project, worked on in sessions as time allows.
 
-Procedurally generated terrain with a synthwave visual style — neon height-ramped grid, bloom/tone-mapping post-processing, and a dynamic day/night sun with reflective terrain glint.
+Procedurally generated terrain presented as a closed terrain chunk, with a synthwave visual style — neon height-ramped grid, bloom/tone-mapping post-processing, and a dynamic day/night sun with reflective terrain glint.
 
 ## Status
 
-**Phase 2 (terrain) is essentially complete.** Procedural heightmap terrain, a unified visual/build grid, plateau build-sites, region-masked flatland/mountain zoning, rotatable valley carving, and a full synthwave visual pass (bloom, dynamic lighting, terrain reflections) are all in and working.
+**Phase 2 (terrain) is essentially complete.** Procedural heightmap terrain, a closed wall-and-base terrain chunk, a unified visual/build grid, plateau build-sites, region-masked flatland/mountain zoning, rotatable valley carving, and a full synthwave visual pass (bloom, dynamic lighting, terrain reflections) are all in and working.
 
 **No units, combat, projectiles, or resources yet.** A full game-simulation architecture (multiplayer-first, deterministic fixed-tick sim, SoA unit data for 300+ unit scale) is planned for Phase 3 onward — see `Main-GamePlan12-08-2026.md` for the authoritative plan and `CLAUDE.md` for current implementation notes.
 
