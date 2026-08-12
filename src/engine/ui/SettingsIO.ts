@@ -1,16 +1,13 @@
-import { TerrainGenerator, TerrainConfig } from '../terrain/TerrainGenerator';
+import { TerrainGenerator } from '../terrain/TerrainGenerator';
 import { TerrainControls } from './TerrainControls';
-import { EdgeControls, EdgeSettings } from './EdgeControls';
-import { ReflectionControls, ReflectionSettings } from './ReflectionControls';
+import { EdgeControls } from './EdgeControls';
+import { ReflectionControls } from './ReflectionControls';
 import { makeDraggable, DragHandle, clearAllPanelPositions } from './Draggable';
-
-export interface SceneSettings {
-    version: 1;
-    seed: number;
-    terrain: TerrainConfig;
-    edge: EdgeSettings;
-    reflection: ReflectionSettings;
-}
+import {
+    CURRENT_SCENE_SETTINGS_VERSION,
+    normalizeSceneSettings,
+    SceneSettings,
+} from '../config/SceneSettings';
 
 /**
  * Save/load the whole tunable scene (terrain shape + seed, grid colours/
@@ -139,7 +136,7 @@ export class SettingsIO {
 
     private exportToTextarea(): void {
         const settings: SceneSettings = {
-            version: 1,
+            version: CURRENT_SCENE_SETTINGS_VERSION,
             seed: this.terrainGenerator.getSeed(),
             terrain: this.terrainControls.exportSettings(),
             edge: this.edgeControls.exportSettings(),
@@ -165,22 +162,26 @@ export class SettingsIO {
     }
 
     private importFromTextarea(): void {
-        let data: SceneSettings;
+        let rawData: unknown;
         try {
-            data = JSON.parse(this.textarea.value);
+            rawData = JSON.parse(this.textarea.value);
         } catch {
             this.status.textContent = 'Invalid JSON — check for typos/truncation';
             return;
         }
-        if (!data || typeof data !== 'object' || !data.terrain || !data.edge || !data.reflection) {
-            this.status.textContent = 'Missing terrain/edge/reflection sections — not a settings export';
-            return;
-        }
         try {
+            const fallback: SceneSettings = {
+                version: CURRENT_SCENE_SETTINGS_VERSION,
+                seed: this.terrainGenerator.getSeed(),
+                terrain: this.terrainControls.exportSettings(),
+                edge: this.edgeControls.exportSettings(),
+                reflection: this.reflectionControls.exportSettings(),
+            };
+            const data = normalizeSceneSettings(rawData, fallback);
             // Seed first: TerrainControls.importSettings() regenerates with
             // whatever seed is CURRENTLY set, keeping it unchanged — so this
             // has to land before that call, not after.
-            if (typeof data.seed === 'number') this.terrainGenerator.setSeed(data.seed);
+            this.terrainGenerator.setSeed(data.seed);
             this.edgeControls.importSettings(data.edge);
             this.reflectionControls.importSettings(data.reflection);
             this.terrainControls.importSettings(data.terrain); // triggers the regenerate — do this last

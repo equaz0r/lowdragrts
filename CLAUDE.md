@@ -126,6 +126,7 @@ tools/
 - ✅ Terrain presets — `PRESET_DRAMATIC` / `PRESET_ROLLING` / `PRESET_BATTLEFIELD`
 - ✅ OrbitControls camera, TerrainControls, EdgeControls, ReflectionControls
 - ✅ Save/load settings (`SettingsIO.ts`) — full scene as JSON, including seed
+- Settings JSON is versioned through `SceneSettings.ts`. Imports are untrusted input: future versions are rejected; legacy/partial exports inherit live fallbacks; all numbers, booleans and colours are validated/clamped before any scene state changes.
 - ✅ Draggable panels (`Draggable.ts`) — position persists in `localStorage`; "Reset Panel Positions" button
 - ✅ "Sea" shimmer (`TerrainMaterial.ts`) — low/flat ground gets a cheap time-varying normal perturbation for reflection only, so glints dance like light on water without real geometry motion. Gate is `height / heightScale`, matching the vertex-colour gradient's own normalisation.
 - ✅ Sun glitter path — explicitly authored wedge envelope along the real camera→sun ground axis (`calculateSunGlitter()`, `TerrainMaterial.ts`), textured with grid-aligned shard sparkle, shape-verified via `tools/simulate-sun-glitter.js` rather than eyeballed. See Active Tuning Notes below for the constants/gotchas.
@@ -273,6 +274,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Added the project verification gate: dedicated full/sim typechecks, Vitest run/watch commands, production build mode, and `npm run verify`. Initial 19-test suite covers HeightMap boundaries, grid conversions, edge-ramp invariants, deterministic RNG golden output/state resume, and numeric bounds. `package-lock.json` is now tracked for repeatable installs. |
 | 12 Aug 2026 | Removed confirmed-unused dat.gui, simplex-noise variants, Babel/HTML/raw-loader packages and stale shader/noise declarations. Webpack now resolves only formats it actually consumes; TypeScript and ts-loader are correctly build-only dev dependencies. |
 | 12 Aug 2026 | Cleaned documentation authority: README now reflects the resolved glint and real verification commands, `Main-GamePlan12-08-2026.md` is explicitly authoritative, and every stale file under `docs/` has a historical warning plus a current-doc index. |
+| 12 Aug 2026 | Completed scene-settings hardening: moved the versioned schema/normalizer into a pure config module, added safe legacy-partial migration, rejects unsupported future versions, validates colours/booleans and clamps every numeric field to its real UI range before applying anything. Added focused tests. |
 
 ---
 *Update this file at the end of every coding session.*

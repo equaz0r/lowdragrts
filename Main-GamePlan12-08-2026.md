@@ -875,6 +875,8 @@ Do not change glint tuning until this correctness bug is fixed.
 
 ### 14.2 Centralise reflection and scene settings
 
+**Status: completed on `feature/phase-2-5-stabilisation`. Shared live reflection state preserves regeneration/recompile values; versioned scene imports now validate, clamp and migrate legacy partial exports.**
+
 Current problems:
 
 - Reflection controls clone defaults and update the current shader.
