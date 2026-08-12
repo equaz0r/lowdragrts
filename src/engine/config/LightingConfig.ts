@@ -14,7 +14,7 @@ export const LightingParameters = {
     SUN_ORBIT_RADIUS:  8000,
     SUN_MAX_HEIGHT:    0.65,
     SUN_MIN_HEIGHT:    -0.8,
-    SUN_BASE_INTENSITY: 1.75, // Simon's hand-tuned scene, 11 Aug 2026
+    SUN_BASE_INTENSITY: 2.00, // Simon's hand-tuned scene, 12 Aug 2026 (was 1.75, 11 Aug)
     // Applied ONLY to the DirectionalLight that actually illuminates the
     // terrain (LightingSystem.ts's updateSunPosition, the heightFactor-based
     // assignment — the one that wins each frame). The sun disc's own opacity
@@ -103,7 +103,12 @@ export const ReflectionParameters = {
     // values are just the plain Metalness/Roughness slider defaults now,
     // not a "baseline for an ambient state" — tune for overall floor
     // glossiness, independent of the glitter effect entirely.
-    REFLECTION_PARAMS: new Vector4(0.1, 0.88, 0.30, 0.90),
+    //
+    // Updated to Simon's confirmed-good combination (12 Aug 2026, round 18)
+    // — "the perfect combination for the effect I need across the range".
+    // metalness 0.1->1.0, roughness 0.88->0.32, positionFactor 0.30->2.70,
+    // reflectionPower 0.90->1.50.
+    REFLECTION_PARAMS: new Vector4(1.00, 0.32, 2.70, 1.50),
     SUN_INTENSITY:     0.5,
 
     // VIEW_FACTOR_WEIGHT/SUN_FACTOR_WEIGHT/SUN_FACTOR_POWER/VIEW_FACTOR_POWER

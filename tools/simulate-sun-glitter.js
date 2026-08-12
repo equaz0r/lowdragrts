@@ -56,6 +56,8 @@ const GLITTER_SPARKLE_CONTRAST = 3.2;
 const GLITTER_SHARD_SEAM = 0.06;
 const GLITTER_BASE_GLOW = 0.12;
 const GLITTER_SHARD_GLOW_FLOOR = 0.35;
+const GLINT_LOW_SUN_BOOST_MAX = 2.0;
+const GLINT_LOW_SUN_BOOST_POWER = 6.0;
 
 // --- Keep in sync with LightingSystem.ts's updateSunPosition() ---
 const SUN_ORBIT_RADIUS = 8000;
@@ -119,7 +121,8 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time, sunHeig
     const sunDir = norm3(sub3(sunPos, worldPos));
     const facingSunGate = smoothstep(-0.05, 0.05, dot3(geomNormal, sunDir));
 
-    return wedgeFactor * mix(GLITTER_BASE_GLOW, 1.0, sparkle) * facingSunGate * inFront;
+    const lowSunBoost = mix(1.0, GLINT_LOW_SUN_BOOST_MAX, Math.pow(1.0 - sunHeightT, GLINT_LOW_SUN_BOOST_POWER));
+    return wedgeFactor * mix(GLITTER_BASE_GLOW, 1.0, sparkle) * facingSunGate * inFront * lowSunBoost;
 }
 
 // --- Perspective camera + screen-space raycast to the flat ground plane ---

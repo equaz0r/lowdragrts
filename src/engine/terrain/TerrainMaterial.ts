@@ -151,6 +151,20 @@ const GLITTER_WIDTH_AUTO_MIN   = 250;   // at sunHeightT = 1 (highest/smallest s
 const GLITTER_WIDTH_AUTO_MAX   = 3000;  // at sunHeightT = 0 (lowest/biggest sun)
 const GLITTER_WIDTH_CURVE_POWER = 1.25;
 const GLITTER_WIDTH_POWER = 0.8;    // was 1.4 (>1 = slow start) — now <1 = fast early growth
+// Round 18 (12 Aug 2026) — Simon confirmed the whole range looks right now
+// EXCEPT brightness specifically between sun height -0.56 and -0.80 (the
+// low/widest end), which needs to be brighter. Makes sense: at max width
+// (up to 3000 * up to a 3.0 slider multiplier = 9000 world units at the
+// extreme), the same sparkle density is spread over a much bigger area,
+// reading as thinner/dimmer overall even though each individual shard is
+// exactly as bright as elsewhere. Boost concentrated steeply toward the low
+// end via the same sunHeightT driving the width curve — negligible above
+// roughly sunHeightT=0.2 (~sun height -0.51), ramping up toward
+// GLINT_LOW_SUN_BOOST_MAX at sunHeightT=0 (height -0.80). First-pass
+// numbers — the exact boundary/strength Simon actually wants can only be
+// judged live.
+const GLINT_LOW_SUN_BOOST_MAX   = 2.0;
+const GLINT_LOW_SUN_BOOST_POWER = 6.0;
 // Lower base contrast floor + higher exponent (was 0.25 / 2.5) — Simon
 // wants fewer, more dramatic peaks ("classic glint/reflection") rather than
 // a broad even wash; see GLITTER_BASE_GLOW below for the paired change.
@@ -413,7 +427,13 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 vec3 sunDir = normalize(sunPos - worldPos);
                 float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, sunDir));
 
-                return wedgeFactor * mix(${GLITTER_BASE_GLOW.toFixed(2)}, 1.0, sparkle) * facingSunGate * inFront;
+                // Low-sun brightness boost — see GLINT_LOW_SUN_BOOST_MAX/
+                // POWER above. Steeply concentrated near sunHeightT=0 via
+                // the high exponent; negligible once the sun is more than
+                // modestly elevated.
+                float lowSunBoost = mix(1.0, ${GLINT_LOW_SUN_BOOST_MAX.toFixed(2)}, pow(1.0 - sunHeightT, ${GLINT_LOW_SUN_BOOST_POWER.toFixed(2)}));
+
+                return wedgeFactor * mix(${GLITTER_BASE_GLOW.toFixed(2)}, 1.0, sparkle) * facingSunGate * inFront * lowSunBoost;
             }
 
             float calculateReflection() {
