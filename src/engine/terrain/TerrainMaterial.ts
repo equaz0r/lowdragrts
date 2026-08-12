@@ -165,6 +165,18 @@ const GLITTER_WIDTH_POWER = 0.8;    // was 1.4 (>1 = slow start) — now <1 = fa
 // judged live.
 const GLINT_LOW_SUN_BOOST_MAX   = 2.0;
 const GLINT_LOW_SUN_BOOST_POWER = 6.0;
+// Ambient sun glow (round 19, 12 Aug 2026) — see calculateReflection()'s
+// positionFactor for the full story: this replaces a fixed distance-from-
+// the-west-edge falloff (never actually sun-tracking, just coincidentally
+// looked aligned when facing straight at the sun) with the same camera->sun
+// ground-axis technique as the glitter wedge, but much wider and
+// untextured — a broad soft glow, not sparkly shards. reflectionParams.z
+// (the existing "Position Factor" slider, range 0.1-5.0) keeps its UI slot,
+// now scaled into a world-unit glow width instead of the old transition
+// width. WIDTH_MIN is a floor so the glow doesn't collapse to a hard edge
+// at the slider's own minimum.
+const AMBIENT_GLOW_WIDTH_SCALE = 600;
+const AMBIENT_GLOW_WIDTH_MIN   = 50;
 // Lower base contrast floor + higher exponent (was 0.25 / 2.5) — Simon
 // wants fewer, more dramatic peaks ("classic glint/reflection") rather than
 // a broad even wash; see GLITTER_BASE_GLOW below for the paired change.
@@ -313,6 +325,24 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             }
 
             /**
+             * How far along, and how far sideways, worldXZ is from the
+             * straight ground-plane line running from camXZ through sunXZ.
+             * Shared by the glitter wedge below AND calculateReflection()'s
+             * ambient sun glow (12 Aug 2026, round 19) — both need the same
+             * underlying geometric relationship, just at different scales
+             * and with different texturing on top. Extracted so both stay
+             * consistent by construction rather than risking two slightly-
+             * different copies of the same maths drifting apart.
+             */
+            void sunAxisInfo(vec2 worldXZ, vec2 sunXZ, vec2 camXZ, out float along, out float lateralOffset) {
+                vec2 axis = normalize(sunXZ - camXZ);
+                vec2 toFrag = worldXZ - camXZ;
+                along = dot(toFrag, axis);
+                vec2 perp = toFrag - axis * along;
+                lateralOffset = length(perp);
+            }
+
+            /**
              * Sun "glitter path" — an explicitly authored wedge envelope along
              * the real camera->sun ground axis (grounded in actual live
              * positions, not an arbitrary mask), textured with per-fragment
@@ -339,16 +369,9 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
              * at all), not a continuous dimmer.
              */
             float calculateSunGlitter(vec3 worldPos, vec3 geomNormal, vec3 sunPos, vec3 camPos, float time, float mapSize) {
-                vec2 camXZ = camPos.xz;
-                vec2 sunXZ = sunPos.xz;
-                vec2 fragXZ = worldPos.xz;
-                vec2 axis = normalize(sunXZ - camXZ);
-                vec2 toFrag = fragXZ - camXZ;
-                float along = dot(toFrag, axis);
+                float along, lateralOffset;
+                sunAxisInfo(worldPos.xz, sunPos.xz, camPos.xz, along, lateralOffset);
                 float inFront = step(0.0, along);
-
-                vec2 perp = toFrag - axis * along;
-                float lateralOffset = length(perp);
 
                 // glitterReach.x (alongFar) is live-adjustable — see the uniform
                 // declaration above for why. max() guard: same smoothstep/
@@ -481,12 +504,37 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time, gridSize);
                 debugGlitterValue = sunGlitter; // for the debug isolation view — see uniform declaration above
 
-                float distanceFromWest = (vWorldPosition.x + ${ReflectionParameters.WEST_FALLOFF_START.toFixed(1)}) / ${ReflectionParameters.WEST_FALLOFF_LENGTH.toFixed(1)};
-                // max() guard: smoothstep(edge0, edge1, x) is undefined behaviour (divide-by-
-                // zero internally) when edge0 == edge1 — reflectionParams.z reaching exactly
-                // 0 (its slider's own minimum) produced NaN here, which blooms into a big
-                // white blowout downstream. Floor keeps it defined at every slider position.
-                float positionFactor = smoothstep(0.0, max(0.001, reflectionParams.z), 1.0 - distanceFromWest);
+                // Shared facing-sun gate (round 19) — applied below to
+                // EVERY reflectivity term except sunGlitter (which already
+                // has its own internal copy) and panelFactor (a textural
+                // detail, not "shine", left alone). Before this, grazing/
+                // height shine in particular had NO sun-awareness at all —
+                // purely camera-angle-based — so steep terrain (peaks,
+                // ridges) could shine even facing directly away from the
+                // sun, in its own shadow (Simon, 12 Aug 2026: "facing away
+                // from the sun on higher terrain... in theory in the
+                // shadow... but I can [see the glint]").
+                vec3 fragToSun = normalize(sunWorldPosition - vWorldPosition);
+                float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, fragToSun));
+
+                // Was a fixed distance-from-the-west-edge falloff — happened
+                // to look sun-aligned only because the sun's orbit always
+                // sits to the west, but never actually read the sun's
+                // position, so it didn't re-centre as the camera turned
+                // (Simon, 12 Aug 2026: "needs to originate in the centre in
+                // line with the sun not offset... only visible when I orbit
+                // or pan to the sides"). Redesigned around the SAME camera->
+                // sun ground-axis technique as the glitter wedge (see
+                // sunAxisInfo()) — correctly centred regardless of camera
+                // angle, just much wider and untextured (a broad soft glow,
+                // not sparkly shards). reflectionParams.z (Position Factor
+                // slider) keeps its existing role, now as a width scale
+                // instead of a transition width.
+                float posAlong, posLateral;
+                sunAxisInfo(vWorldPosition.xz, sunWorldPosition.xz, cameraPosition.xz, posAlong, posLateral);
+                float positionGlowWidth = max(${AMBIENT_GLOW_WIDTH_MIN.toFixed(1)}, reflectionParams.z * ${AMBIENT_GLOW_WIDTH_SCALE.toFixed(1)});
+                float positionFactor = step(0.0, posAlong) * (1.0 - smoothstep(0.0, positionGlowWidth, posLateral));
+                positionFactor *= facingSunGate;
 
                 float panelFactor = getPanelFactor();
 
@@ -495,6 +543,9 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
 
                 float grazingDot = 1.0 - abs(dot(normalizedNormal, normalizedCameraDir));
                 float grazingFactor = pow(grazingDot, ${ReflectionParameters.GRAZING_FACTOR_POWER.toFixed(2)});
+                // See facingSunGate comment above — this is the fix for
+                // glint appearing on shadowed/away-facing steep terrain.
+                grazingFactor *= facingSunGate;
 
                 float totalFactor = pow(
                     sunGlitter     * ${ReflectionParameters.SUN_GLITTER_WEIGHT.toFixed(2)} +

@@ -34,6 +34,11 @@ export interface TerrainConfig {
     valleyEnabled: boolean;
     valleyWidth:   number;      // fraction of total map width (0.05 – 0.5)
     valleyDepth:   number;      // 0 = no effect, 1 = flat floor
+    valleyAngle:   number;      // degrees, 0-360 — corridor orientation. 0 = original
+                                 // (runs north-south, i.e. constant-X band); 90 = runs
+                                 // east-west (constant-Z band) — aligns with the sun's
+                                 // fixed westward direction, since the orbit never moves
+                                 // in Z. See applyValleyMask() below.
     plateauEnabled: boolean;
     plateauCount:   number;     // how many flat build-sites to place
     plateauRadius:  number;     // world units — flat core + falloff band
@@ -61,7 +66,9 @@ export const TerrainPresets: Record<string, TerrainConfig> = {
         baseFrequency: 0.00035, peakFrequency: 0.0009,
         warpAmplitude: 500, warpFrequency: 0.00018,
         peakThreshold: 0.32, baseOctaves: 5, peakOctaves: 7,
-        valleyEnabled: true, valleyWidth: 0.14, valleyDepth: 0.85,
+        // valleyAngle 90 = east-west corridor, aligned with the sun's fixed
+        // westward direction (Simon, 12 Aug 2026) — was un-rotated (0).
+        valleyEnabled: true, valleyWidth: 0.14, valleyDepth: 0.85, valleyAngle: 90,
         plateauEnabled: false, plateauCount: 0, plateauRadius: 500, plateauEdge: 0.6,
         // Stark contrast: very flat lowlands, exaggerated mountains — dramatic by name.
         regionMaskEnabled: true, regionMaskFrequency: 0.00004,
@@ -72,7 +79,7 @@ export const TerrainPresets: Record<string, TerrainConfig> = {
         baseFrequency: 0.0005, peakFrequency: 0.0008,
         warpAmplitude: 200, warpFrequency: 0.00022,
         peakThreshold: 0.55, baseOctaves: 4, peakOctaves: 5,
-        valleyEnabled: false, valleyWidth: 0.18, valleyDepth: 0.5,
+        valleyEnabled: false, valleyWidth: 0.18, valleyDepth: 0.5, valleyAngle: 90,
         plateauEnabled: false, plateauCount: 0, plateauRadius: 500, plateauEdge: 0.6,
         // Off — this preset is specifically uniform gentle hills everywhere,
         // no stark flat/mountain zoning.
@@ -84,7 +91,7 @@ export const TerrainPresets: Record<string, TerrainConfig> = {
         baseFrequency: 0.0004, peakFrequency: 0.0008,
         warpAmplitude: 300, warpFrequency: 0.0002,
         peakThreshold: 0.45, baseOctaves: 5, peakOctaves: 6,
-        valleyEnabled: true, valleyWidth: 0.16, valleyDepth: 0.5,
+        valleyEnabled: true, valleyWidth: 0.16, valleyDepth: 0.5, valleyAngle: 90,
         plateauEnabled: true, plateauCount: 4, plateauRadius: 550, plateauEdge: 0.65,
         // Moderate flat expanses (good open ground alongside the plateau
         // build-sites) with real mountains for tactical cover/chokepoints.
@@ -286,6 +293,16 @@ export class TerrainGenerator {
         // proposes the same build-sites, independent of any live slider change.
         this.plateauSites = this.generatePlateauSites(sampler, totalSize);
 
+        // Valley corridor rotation — computed once outside the per-vertex loop
+        // below rather than per-iteration. 0deg = original behaviour (corridor
+        // runs north-south, a constant-X band); the projection axis rotates
+        // with the angle, so at 90deg the corridor runs east-west (constant-Z)
+        // instead — see the TerrainConfig.valleyAngle comment for why that's
+        // the one that lines up with the sun.
+        const valleyAngleRad = (this.config.valleyAngle * Math.PI) / 180;
+        const valleyCos = Math.cos(valleyAngleRad);
+        const valleySin = Math.sin(valleyAngleRad);
+
         // First pass: generate heights
         for (let z = 0; z <= divisions; z++) {
             for (let x = 0; x <= divisions; x++) {
@@ -296,8 +313,11 @@ export class TerrainGenerator {
                 let height = this.sampleBaseHeight(sampler, xPos, zPos);
 
                 if (this.config.valleyEnabled) {
-                    const sigma      = this.config.valleyWidth * totalSize * 0.5;
-                    const valleyMask = Math.exp(-(xPos * xPos) / (2 * sigma * sigma));
+                    const sigma = this.config.valleyWidth * totalSize * 0.5;
+                    // Project (xPos, zPos) onto the rotated axis — this IS
+                    // xPos unrotated (valleyCos=1, valleySin=0 at angle 0).
+                    const alongValley = xPos * valleyCos + zPos * valleySin;
+                    const valleyMask = Math.exp(-(alongValley * alongValley) / (2 * sigma * sigma));
                     height = height * (1.0 - this.config.valleyDepth * valleyMask);
                 }
 

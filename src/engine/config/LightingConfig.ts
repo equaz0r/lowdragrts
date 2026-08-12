@@ -157,6 +157,11 @@ export const ReflectionParameters = {
     // not blending), which was blowing out brightness independent of bloom.
     REFLECTION_BLEND:  0.85,
 
-    WEST_FALLOFF_START:  -4000,
-    WEST_FALLOFF_LENGTH:  8000,
+    // WEST_FALLOFF_START/LENGTH removed (12 Aug 2026, round 19) — positionFactor
+    // no longer uses a fixed west-edge falloff, see calculateReflection()'s
+    // comment on positionFactor in TerrainMaterial.ts for why (it never
+    // actually tracked the sun, just coincidentally looked aligned facing
+    // straight at it). Replaced by the same camera->sun ground-axis
+    // technique as the glitter wedge — AMBIENT_GLOW_WIDTH_SCALE/MIN in
+    // TerrainMaterial.ts, not a LightingConfig constant any more.
 } as const;

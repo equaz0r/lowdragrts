@@ -349,6 +349,12 @@ export class TerrainControls {
             this.terrainGenerator.config.valleyDepth = v;
         }, '0 = no effect, 1 = flat valley floor');
 
+        // 0-360deg, full rotation — 90 (the new default) runs the corridor
+        // east-west, aligned with the sun's fixed westward direction.
+        this.createSlider('Valley Angle', 0, 360, cfg.valleyAngle, 1, (v) => {
+            this.terrainGenerator.config.valleyAngle = v;
+        }, 'Corridor orientation in degrees — 90 runs it east-west, aligned with the sun');
+
         this.createSeparator();
         this.createSectionLabel('Plateaus (build sites)');
 
