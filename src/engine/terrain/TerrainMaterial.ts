@@ -84,14 +84,12 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // an integer). Each glint is now literally "this specific floor panel is
 // catching the light", not a coincidentally-similar but separate texture.
 const GLITTER_SHARD_SIZE = GridParameters.CELL_SIZE; // world units — same panels the neon grid draws
-// Animation: NOT a scrolling offset any more (that's what broke grid
-// alignment above — sliding the sample coordinate over time inherently
-// drags shard boundaries away from the fixed grid cells they're now
-// supposed to align with). Instead, time is quantized into discrete steps;
-// every step, ALL shards simultaneously re-roll to new independent random
-// values (the hash input shifts by a per-step offset), giving a twinkle —
-// panels flicker on/off — while cell BOUNDARIES themselves never move.
-const GLITTER_TWINKLE_INTERVAL = 2.0; // seconds between re-rolls
+// No animation constant here any more (12 Aug 2026, round 14) — round 13's
+// quantized-time re-roll fixed grid alignment but introduced motion with no
+// cause (Simon: shards cycling every couple of seconds on a fully static
+// camera and sun). Each shard's brightness is now a pure function of
+// position, no time input at all — see calculateSunGlitter() below for how
+// it still changes correctly WHEN the camera/sun actually move.
 // Thin dark seam between shards (in cell-fraction units, 0-0.5) — the visual
 // cue that makes them read as discrete tiles/shards rather than one
 // undifferentiated blob whenever several adjacent cells happen to light up
@@ -296,14 +294,18 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 vec2 gridAligned = (worldPos.xz + vec2(mapSize * 0.5)) / ${GLITTER_SHARD_SIZE.toFixed(1)};
                 vec2 shardCell = floor(gridAligned);
                 vec2 shardFrac = fract(gridAligned);
-                // Twinkle via quantized time, NOT a scrolling coordinate — a
-                // scroll would immediately drag shard boundaries away from
-                // the fixed grid cells above. Every GLITTER_TWINKLE_INTERVAL
-                // seconds, ALL shards simultaneously re-roll (the hash input
-                // shifts by a per-step offset) while cell BOUNDARIES never
-                // move.
-                float twinkleStep = floor(time / ${GLITTER_TWINKLE_INTERVAL.toFixed(2)});
-                float n = glitterHash(shardCell + vec2(twinkleStep * 17.0, twinkleStep * 31.0));
+                // NOT time-animated (12 Aug 2026, round 14) — Simon correctly
+                // flagged the periodic re-roll from round 13 as motion with
+                // no cause: shards were cycling every couple of seconds even
+                // with a fully static camera and sun. A shard's brightness is
+                // now a pure function of its position — deterministic, no
+                // time input at all. It still visibly changes as the camera
+                // or sun actually moves, because wedgeFactor/facingSunGate
+                // below depend on live camera/sun position and sweep
+                // different shards into and out of the wedge — that's
+                // legitimate, motivated change. A static view now shows a
+                // genuinely static pattern, full stop.
+                float n = glitterHash(shardCell);
                 float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
 
                 // Distance from this fragment to the nearest cell edge, on

@@ -40,7 +40,6 @@ function glitterHash(p) { return fract(Math.sin(dot2(p, [127.1, 311.7])) * 43758
 // --- Keep in sync with GridParameters in src/engine/config/TerrainConfig.ts ---
 const MAP_SIZE = 8000;         // GridParameters.TOTAL_SIZE
 const GLITTER_SHARD_SIZE = 64; // GridParameters.CELL_SIZE — shards snap to the real grid now
-const GLITTER_TWINKLE_INTERVAL = 2.0;
 const GLITTER_ALONG_NEAR = 250;
 const GLITTER_ALONG_FAR = 2500;
 const GLITTER_WIDTH_NEAR = 70;
@@ -82,17 +81,16 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
 
     // Grid-aligned cell (12 Aug 2026) — snaps to the exact same cells the
     // visible neon grid draws (GridSystem.worldToCell()'s +mapSize/2 half-
-    // offset), not an arbitrary unrelated size. Twinkle via quantized time
-    // (all shards re-roll together every GLITTER_TWINKLE_INTERVAL seconds),
-    // NOT a scrolling coordinate — a scroll would drag shard boundaries away
-    // from the fixed grid cells. See TerrainMaterial.ts for the full story
-    // (first attempt used an arbitrary scrolling ~33-unit cell — Simon
-    // immediately flagged it as visibly unaligned with the real grid).
+    // offset), not an arbitrary unrelated size. NOT time-animated (round
+    // 14) — a quantized-time re-roll fixed grid alignment in round 13 but
+    // introduced motion with no cause (shards cycling on a fully static
+    // camera/sun). Brightness is a pure function of position now; it still
+    // changes correctly when the camera/sun move, since wedgeFactor/
+    // facingSunGate below depend on live camera/sun position.
     const gridAligned = [(worldPos[0] + MAP_SIZE*0.5) / GLITTER_SHARD_SIZE, (worldPos[2] + MAP_SIZE*0.5) / GLITTER_SHARD_SIZE];
     const shardCell = [Math.floor(gridAligned[0]), Math.floor(gridAligned[1])];
     const shardFrac = [gridAligned[0]-shardCell[0], gridAligned[1]-shardCell[1]];
-    const twinkleStep = Math.floor(time / GLITTER_TWINKLE_INTERVAL);
-    const n = glitterHash([shardCell[0] + twinkleStep*17.0, shardCell[1] + twinkleStep*31.0]);
+    const n = glitterHash(shardCell);
     let sparkle = Math.pow(n, GLITTER_SPARKLE_CONTRAST);
     const edgeDist = [Math.min(shardFrac[0], 1-shardFrac[0]), Math.min(shardFrac[1], 1-shardFrac[1])];
     const distToEdge = Math.min(edgeDist[0], edgeDist[1]);
