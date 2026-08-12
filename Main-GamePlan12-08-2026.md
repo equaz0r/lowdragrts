@@ -132,7 +132,7 @@ These should stay configurable or be decided through prototypes:
 - Rotatable valley corridor.
 - A retained heightmap with height, normal, slope, bounds and buildability queries.
 - One logical terrain grid used for visible neon lines and cell buildability.
-- A closed terrain-chunk presentation mesh: four walls follow the boundary height samples and connect to a flat underside below the terrain minimum.
+- A closed terrain-chunk presentation mesh: four metallic violet walls follow the boundary height samples and connect to a flat underside below the terrain minimum; a separate unlit grid overlay keeps the sides readable in dark lighting.
 - Dynamic sun, sky and halo.
 - Terrain reflection/glitter shader and debug isolation view.
 - Edge-grid height colour ramp and pulse shader.
@@ -599,7 +599,7 @@ The terrain renderer observes completed simulation ticks and applies dirty regio
 3. Mark only affected GPU attribute ranges dirty where practical.
 4. Update bounding volumes when deformation can invalidate them.
 5. Update the neon grid line endpoints from the same heightfield.
-6. If a dirty region touches the map boundary, update the matching terrain-chunk wall rim from the same height samples. The flat underside does not change.
+6. If a dirty region touches the map boundary, update the matching terrain-chunk wall rim and side-grid top outline from the same height samples. The flat underside does not change.
 
 Do not call full procedural terrain regeneration after an explosion.
 

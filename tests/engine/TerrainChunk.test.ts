@@ -3,6 +3,7 @@ import { BufferAttribute, Vector3 } from 'three';
 import {
     calculateTerrainChunkBaseY,
     createTerrainChunkGeometry,
+    createTerrainChunkGridGeometry,
 } from '../../src/engine/terrain/TerrainChunk';
 
 const heights = new Float32Array([
@@ -49,5 +50,15 @@ describe('TerrainChunk', () => {
     it('rejects incomplete height buffers', () => {
         expect(() => createTerrainChunkGeometry(new Float32Array(8), 2, 2, 0))
             .toThrow(/height buffer/i);
+    });
+
+    it('adds side-grid outlines, bands, and vertical divisions', () => {
+        const geometry = createTerrainChunkGridGeometry(heights, 2, 2, 10);
+        const position = geometry.getAttribute('position');
+
+        // 16 top/bottom + 24 intermediate + 8 vertical lines, two vertices each.
+        expect(position.count).toBe(96);
+        expect(geometry.boundingBox?.min.y).toBe(-502);
+        expect(geometry.boundingBox?.max.y).toBe(32);
     });
 });
