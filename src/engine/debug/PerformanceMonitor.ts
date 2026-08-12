@@ -22,6 +22,7 @@ export class PerformanceMonitor {
     private renderer: WebGLRenderer;
     private container: HTMLDivElement;
     private statsContainer!: HTMLDivElement;
+    private statsToggleButton!: HTMLButtonElement;
     private dragHandle: DragHandle | null = null;
     private metrics: PerformanceMetrics;
     private lastTime: number;
@@ -90,7 +91,6 @@ export class PerformanceMonitor {
         title.style.borderBottom = '1px solid rgba(255,255,255,0.2)';
         title.style.paddingBottom = '2px';
         this.container.appendChild(title);
-        this.dragHandle = makeDraggable(this.container, title, 'performance-monitor');
 
         // Create stats container (new separate container for stats)
         this.statsContainer = document.createElement('div');
@@ -108,25 +108,26 @@ export class PerformanceMonitor {
         this.graphContext = this.graphCanvas.getContext('2d')!;
 
         // Add toggle button with updated styles
-        const toggleButton = document.createElement('button');
-        toggleButton.textContent = 'Hide Performance Stats';
-        toggleButton.style.marginTop = '2px';
-        toggleButton.style.width = '100%';
-        toggleButton.style.padding = '2px';
-        toggleButton.style.backgroundColor = '#444';
-        toggleButton.style.border = 'none';
-        toggleButton.style.color = 'white';
-        toggleButton.style.cursor = 'pointer';
-        toggleButton.style.borderRadius = '2px';
-        toggleButton.style.fontSize = '10px';
-        toggleButton.style.pointerEvents = 'auto';
-        toggleButton.onclick = () => this.toggleVisibility();
+        this.statsToggleButton = document.createElement('button');
+        this.statsToggleButton.textContent = 'Hide Performance Stats';
+        this.statsToggleButton.style.marginTop = '2px';
+        this.statsToggleButton.style.width = '100%';
+        this.statsToggleButton.style.padding = '2px';
+        this.statsToggleButton.style.backgroundColor = '#444';
+        this.statsToggleButton.style.border = 'none';
+        this.statsToggleButton.style.color = 'white';
+        this.statsToggleButton.style.cursor = 'pointer';
+        this.statsToggleButton.style.borderRadius = '2px';
+        this.statsToggleButton.style.fontSize = '10px';
+        this.statsToggleButton.style.pointerEvents = 'auto';
+        this.statsToggleButton.onclick = () => this.toggleVisibility();
 
         // Append elements in the desired order (statsContainer already
         // appended above — appending it again here was a harmless no-op
         // reorder, since a node can only have one parent; removed)
         this.container.appendChild(this.graphCanvas);
-        this.container.appendChild(toggleButton);
+        this.container.appendChild(this.statsToggleButton);
+        this.dragHandle = makeDraggable(this.container, title, 'performance-monitor');
 
         document.body.appendChild(this.container);
     }
@@ -288,10 +289,9 @@ export class PerformanceMonitor {
         this.graphCanvas.style.display = this.visible ? 'block' : 'none';
         
         // Update button text
-        const button = this.container.querySelector('button');
-        if (button) {
-            button.textContent = this.visible ? 'Hide Performance Stats' : 'Show Performance Stats';
-        }
+        this.statsToggleButton.textContent = this.visible
+            ? 'Hide Performance Stats'
+            : 'Show Performance Stats';
 
         // Adjust container width when hidden
         this.container.style.width = this.visible ? '180px' : 'auto';

@@ -7,6 +7,7 @@ export interface DragHandle {
 }
 
 const STORAGE_PREFIX = 'lowdragrts.panelPos.';
+const COLLAPSE_STORAGE_PREFIX = 'lowdragrts.panelCollapsed.';
 
 interface SavedPosition {
     left: number;
@@ -33,6 +34,7 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function makeDraggable(container: HTMLElement, handle: HTMLElement, storageKey: string): DragHandle {
     const fullKey = STORAGE_PREFIX + storageKey;
+    const collapseKey = COLLAPSE_STORAGE_PREFIX + storageKey;
 
     const applyPosition = (left: number, top: number): void => {
         const maxLeft = Math.max(0, window.innerWidth - container.offsetWidth);
@@ -56,6 +58,58 @@ export function makeDraggable(container: HTMLElement, handle: HTMLElement, stora
     handle.style.cursor = 'move';
     handle.style.userSelect = 'none';
     handle.style.pointerEvents = 'auto'; // in case the container itself has pointerEvents:none
+    handle.style.display = 'flex';
+    handle.style.alignItems = 'center';
+
+    const rollupButton = document.createElement('button');
+    rollupButton.type = 'button';
+    Object.assign(rollupButton.style, {
+        marginLeft: 'auto',
+        padding: '0 2px',
+        border: 'none',
+        background: 'transparent',
+        color: 'inherit',
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        lineHeight: '1',
+        cursor: 'pointer',
+        pointerEvents: 'auto',
+    });
+    handle.appendChild(rollupButton);
+
+    const contentElements = Array.from(container.children)
+        .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== handle);
+    const originalDisplay = new Map<HTMLElement, string>(
+        contentElements.map(element => [element, element.style.display]),
+    );
+    let collapsed = localStorage.getItem(collapseKey) === 'true';
+
+    const applyCollapsed = (): void => {
+        contentElements.forEach(element => {
+            element.style.display = collapsed ? 'none' : (originalDisplay.get(element) ?? '');
+        });
+        rollupButton.textContent = collapsed ? '▸' : '▾';
+        rollupButton.title = collapsed ? 'Expand panel' : 'Collapse panel';
+        rollupButton.setAttribute('aria-label', rollupButton.title);
+        rollupButton.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    const onRollupMouseDown = (event: MouseEvent): void => {
+        event.stopPropagation();
+    };
+
+    const onRollupClick = (event: MouseEvent): void => {
+        event.stopPropagation();
+        const rect = container.getBoundingClientRect();
+        collapsed = !collapsed;
+        localStorage.setItem(collapseKey, String(collapsed));
+        applyCollapsed();
+        applyPosition(rect.left, rect.top);
+    };
+
+    rollupButton.addEventListener('mousedown', onRollupMouseDown);
+    rollupButton.addEventListener('click', onRollupClick);
+    applyCollapsed();
 
     let dragging = false;
     let startMouseX = 0, startMouseY = 0, startLeft = 0, startTop = 0;
@@ -90,6 +144,8 @@ export function makeDraggable(container: HTMLElement, handle: HTMLElement, stora
 
     return {
         destroy: () => {
+            rollupButton.removeEventListener('mousedown', onRollupMouseDown);
+            rollupButton.removeEventListener('click', onRollupClick);
             handle.removeEventListener('mousedown', onMouseDown);
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
@@ -98,15 +154,17 @@ export function makeDraggable(container: HTMLElement, handle: HTMLElement, stora
 }
 
 /**
- * Clears every panel's saved position. Panels only read localStorage at
+ * Clears every panel's saved position and collapsed state. Panels only read localStorage at
  * construction/rebuild time, so this needs a page reload to take visual
- * effect — the "Reset Panel Positions" button (SettingsIO) does both.
+ * effect — the "Reset Panel Layout" button (SettingsIO) does both.
  */
 export function clearAllPanelPositions(): void {
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith(STORAGE_PREFIX)) keys.push(key);
+        if (key && (key.startsWith(STORAGE_PREFIX) || key.startsWith(COLLAPSE_STORAGE_PREFIX))) {
+            keys.push(key);
+        }
     }
     keys.forEach(k => localStorage.removeItem(k));
 }

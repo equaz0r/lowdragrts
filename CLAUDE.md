@@ -67,9 +67,9 @@ src/
     │   │                           #   0 — see Do Not Touch)
     │   ├── SettingsIO.ts           # Save/load the whole tunable scene as one JSON blob — bundles
     │   │                           #   each panel's own exportSettings()/importSettings(). Also
-    │   │                           #   owns "Reset Panel Positions".
-    │   └── Draggable.ts            # makeDraggable(container, titleEl, key) — all 5 panels drag by
-    │                               #   title bar, position persists in localStorage. Panels with a
+    │   │                           #   owns "Reset Panel Layout".
+    │   └── Draggable.ts            # makeDraggable(container, titleEl, key) — all 5 panels drag and
+    │                               #   roll up by title bar; layout persists in localStorage. Panels with a
     │                               #   renderAll()-style full-DOM-rebuild MUST destroy()/rebind the
     │                               #   handle on every rebuild.
     │
@@ -128,7 +128,7 @@ tools/
 - ✅ Save/load settings (`SettingsIO.ts`) — full scene as JSON, including seed
 - Settings JSON is versioned through `SceneSettings.ts`. Imports are untrusted input: future versions are rejected; legacy/partial exports inherit live fallbacks; all numbers, booleans and colours are validated/clamped before any scene state changes.
 - Sharing UI distinguishes the true unsigned 32-bit **Terrain Seed** (0–4,294,967,295; terrain RNG only, current terrain sliders retained) from reversible **Lighting Codes** (`LDR-L1-…`) and **Full Scene Codes** (`LDR-S1-…`). Share codes are versioned base64url JSON in `ShareCodes.ts`, not hashes: they contain enough data to restore the settings. Full Scene includes terrain seed/config, grid appearance and lighting.
-- ✅ Draggable panels (`Draggable.ts`) — position persists in `localStorage`; "Reset Panel Positions" button
+- ✅ Draggable/collapsible panels (`Draggable.ts`) — title-bar arrow rolls each panel to its still-draggable title; position and collapsed state persist in `localStorage`; "Reset Panel Layout" clears both
 - ✅ "Sea" shimmer (`TerrainMaterial.ts`) — low/flat ground gets a cheap time-varying normal perturbation for reflection only, so glints dance like light on water without real geometry motion. Gate is `height / heightScale`, matching the vertex-colour gradient's own normalisation.
 - ✅ Sun glitter path — explicitly authored wedge envelope along the real camera→sun ground axis (`calculateSunGlitter()`, `TerrainMaterial.ts`), textured with grid-aligned shard sparkle, shape-verified via `tools/simulate-sun-glitter.js` rather than eyeballed. See Active Tuning Notes below for the constants/gotchas.
 - ✅ Valley corridor rotation (`TerrainGenerator.ts`) — `TerrainConfig.valleyAngle` (0–360°, slider in `TerrainControls`), rotates the Gaussian valley-carving corridor. Defaults to 90° in all presets (runs east-west, aligned with the sun's fixed westward orbit).
@@ -278,6 +278,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Completed scene-settings hardening: moved the versioned schema/normalizer into a pure config module, added safe legacy-partial migration, rejects unsupported future versions, validates colours/booleans and clamps every numeric field to its real UI range before applying anything. Added focused tests. |
 | 12 Aug 2026 | Added clearly labelled sharing controls: visible/loadable 10-digit-max Terrain Seed, Lighting Code and Full Scene Code alongside the existing readable JSON. Codes have self-identifying version prefixes and reversible payloads; seed display follows regeneration/import. |
 | 12 Aug 2026 | Fixed share-code visibility after live review: Lighting and Full Scene fields now show their current codes immediately instead of placeholder text, and stay current after terrain regeneration, JSON/code loads, and lighting/grid slider changes. Copy still regenerates the value defensively. |
+| 12 Aug 2026 | Added a shared roll-up/down arrow to every debug panel. Collapsing hides everything except the draggable title bar, persists per panel across reloads, and Reset Panel Layout clears both positions and collapsed states. |
 
 ---
 *Update this file at the end of every coding session.*

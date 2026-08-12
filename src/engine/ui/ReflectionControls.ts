@@ -67,9 +67,9 @@ export class ReflectionControls {
         title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
         title.style.paddingBottom = '2px';
         this.container.appendChild(title);
-        this.dragHandle = makeDraggable(this.container, title, 'reflection-controls');
 
         this.createControls();
+        this.dragHandle = makeDraggable(this.container, title, 'reflection-controls');
     }
 
     private createSlider(

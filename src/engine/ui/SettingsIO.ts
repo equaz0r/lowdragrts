@@ -73,7 +73,6 @@ export class SettingsIO {
             paddingBottom: '2px',
         });
         this.container.appendChild(title);
-        this.dragHandle = makeDraggable(this.container, title, 'settings-io');
 
         this.createShareControls();
 
@@ -124,7 +123,7 @@ export class SettingsIO {
 
         const resetRow = document.createElement('div');
         resetRow.style.marginTop = '4px';
-        const resetBtn = this.makeButton('Reset Panel Positions', () => {
+        const resetBtn = this.makeButton('Reset Panel Layout', () => {
             clearAllPanelPositions();
             window.location.reload();
         });
@@ -132,9 +131,10 @@ export class SettingsIO {
         // action not a "data" one, and it's a full reload, not instant.
         resetBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
         resetBtn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-        resetBtn.title = 'Clears saved drag positions for all panels and reloads the page';
+        resetBtn.title = 'Clears saved panel positions and collapsed states, then reloads the page';
         resetRow.appendChild(resetBtn);
         this.container.appendChild(resetRow);
+        this.dragHandle = makeDraggable(this.container, title, 'settings-io');
 
         this.terrainGenerator.addRegenerateListener(this.regenerateListener);
         this.edgeControls.addChangeListener(this.shareSettingsListener);

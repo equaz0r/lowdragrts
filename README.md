@@ -51,7 +51,7 @@ This runs the full TypeScript check, isolated simulation check, automated tests,
 ## Controls (current build)
 
 - **Orbit / pan / zoom** — mouse drag / right-drag / scroll (Three.js `OrbitControls`)
-- Several draggable debug panels are shown by default (Terrain Shape, Grid Appearance, Terrain Controls, Save/Load Settings, Performance Monitor) — these are the current dev-facing controls for tuning terrain generation, lighting, and reflections live. Panel positions persist across reloads; a "Reset Panel Positions" button is in the Save/Load Settings panel.
+- Several draggable debug panels are shown by default (Terrain Shape, Grid Appearance, Terrain Controls, Share/Save Settings, Performance Monitor). Use the arrow in any title bar to roll that panel down to its title only; it remains draggable. Positions and collapsed states persist across reloads, with a "Reset Panel Layout" button in Share/Save Settings.
 - Save/Load Settings panel exports the whole tunable scene (terrain shape, seed, grid colours, reflection/sun params) as JSON, and can re-import it.
 - The same panel shows the current 32-bit Terrain Seed and provides versioned Lighting Codes (`LDR-L1-…`) and Full Scene Codes (`LDR-S1-…`) for easy sharing. A terrain seed uses the recipient's current terrain sliders; a Full Scene Code reproduces all sliders as well.
 

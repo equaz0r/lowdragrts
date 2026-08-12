@@ -59,9 +59,9 @@ export class TerrainControls {
         title.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)';
         title.style.paddingBottom = '2px';
         this.container.appendChild(title);
-        this.dragHandle = makeDraggable(this.container, title, 'terrain-shape');
 
         this.createControls();
+        this.dragHandle = makeDraggable(this.container, title, 'terrain-shape');
     }
 
     private createSlider(

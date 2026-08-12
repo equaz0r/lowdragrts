@@ -63,10 +63,10 @@ export class EdgeControls {
             paddingBottom: '2px',
         });
         this.container.appendChild(title);
-        this.dragHandle = makeDraggable(this.container, title, 'grid-appearance');
 
         this.buildLayerSection();
         this.buildPulseSection();
+        this.dragHandle = makeDraggable(this.container, title, 'grid-appearance');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
