@@ -27,7 +27,6 @@ describe('CameraTerrainCollision', () => {
         const collision = new CameraTerrainCollision(position, target);
 
         position.set(0, 110, 0);
-        target.set(0, 10, 0);
         expect(collision.resolve(position, target, terrain)).toBe(true);
         expect(position).toEqual(new Vector3(0, 200, 0));
         expect(target).toEqual(new Vector3(0, 100, 0));
@@ -38,6 +37,31 @@ describe('CameraTerrainCollision', () => {
         const from = new Vector3(-150, 50, 0);
         const to = new Vector3(150, 50, 0);
         expect(cameraPathIntersectsTerrain(from, to, terrain)).toBe(true);
+    });
+
+    it('slides pan movement over terrain and follows slopes up and down', () => {
+        const slopedTerrain = new HeightMap(new Float32Array([
+            100, 150, 200,
+            100, 150, 200,
+            100, 150, 200,
+        ]), 2, 200);
+        const position = new Vector3(-100, 132, 0);
+        const target = new Vector3(-100, 32, 0);
+        const collision = new CameraTerrainCollision(position, target);
+
+        // Pan uphill: horizontal input is kept while camera + target rise.
+        position.set(100, 132, 0);
+        target.set(100, 32, 0);
+        expect(collision.resolve(position, target, slopedTerrain)).toBe(true);
+        expect(position).toEqual(new Vector3(100, 232, 0));
+        expect(target).toEqual(new Vector3(100, 132, 0));
+
+        // Pan back downhill while following: both descend with the surface.
+        position.set(-100, 232, 0);
+        target.set(-100, 132, 0);
+        expect(collision.resolve(position, target, slopedTerrain)).toBe(true);
+        expect(position).toEqual(new Vector3(-100, 132, 0));
+        expect(target).toEqual(new Vector3(-100, 32, 0));
     });
 
     it('lifts a saved camera state buried by regenerated terrain', () => {

@@ -49,8 +49,8 @@ src/
     │   └── CameraConfig.ts         # CameraParameters (wired into Game.ts)
     │
     ├── camera/
-    │   └── CameraTerrainCollision.ts # Sweeps OrbitControls motion against HeightMap; rejected
-    │                                 #   zoom/pan/orbit restores camera + target to last safe state
+    │   └── CameraTerrainCollision.ts # Sweeps OrbitControls motion against HeightMap; zoom/orbit
+    │                                 #   stops, surface pan slides and follows terrain height
     │
     ├── terrain/
     │   ├── TerrainGenerator.ts     # Heightmap generation loop, plateau + region-mask logic,
@@ -125,7 +125,7 @@ tools/
 - ✅ Plateau build-sites — deterministic (seeded `Rng`) flat circular sites, `TerrainControls` sliders, `getPlateauSites()`
 - ✅ Unified terrain grid (`TerrainGrid.ts`) — one geometry drives both the neon visual and buildability
 - ✅ Closed terrain chunk (`TerrainChunk.ts`) — the outer height samples form four metallic violet walls down to a flat underside, with an unlit 64-unit side grid matching the surface grid; separate child geometry keeps future boundary-deformation updates small
-- ✅ Camera/terrain collision (`CameraTerrainCollision.ts`) — sweep-tests motion between frames so zoom, pan and orbit stop before entering terrain; restores both camera and OrbitControls target to prevent repeated movement through the surface
+- ✅ Camera/terrain collision (`CameraTerrainCollision.ts`) — sweep-tests motion between frames; zoom/orbit stop before entering terrain, while pan input slides across the surface and adjusts camera/target height together up and down slopes
 - ✅ Dynamic lighting — flat billboarded sun disc (not a sphere, avoids perspective-curved scanlines), sky gradient, halo, retro scanlines, day/night
 - ✅ Terrain reflection shader — tinted by the sun's live colour
 - ✅ Edge grid shader — 5-layer GPU height-ramp (synthwave: navy→purple→pink→orange) + animated electric pulse
@@ -290,6 +290,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Closed the terrain into a solid-looking chunk: four segmented side walls follow the exact boundary height samples and descend to a flat underside below the generation minimum. Kept it as disposable child geometry so future deformation only needs to update it when damage reaches a map edge; added geometry/winding tests. |
 | 12 Aug 2026 | Improved terrain-chunk readability: brighter violet wall gradient, emissive metallic clearcoat/sheen, plus an unlit purple overlay with top/bottom outlines, horizontal bands and thinned vertical grid divisions. Added coverage for the grid geometry bounds/count. |
 | 12 Aug 2026 | Matched the terrain-chunk grid to the surface's 64-unit spacing vertically and horizontally, clipping side lines beneath the uneven rim; strengthened the wall sheen. Added swept camera/heightfield collision so zoom, pan or orbit motion cannot tunnel into/through terrain, including fast movement and terrain regeneration recovery. |
+| 12 Aug 2026 | Refined camera collision response after live testing: surface pan no longer rejects all movement. It keeps the requested horizontal motion and moves camera plus OrbitControls target together to follow terrain uphill/downhill; direct zoom/orbit penetration still stops at the last safe state. |
 
 ---
 *Update this file at the end of every coding session.*

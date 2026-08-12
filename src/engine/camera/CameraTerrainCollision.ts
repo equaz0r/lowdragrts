@@ -61,6 +61,7 @@ export function cameraPathIntersectsTerrain(
 export class CameraTerrainCollision {
     private readonly safePosition = new Vector3();
     private readonly safeTarget = new Vector3();
+    private followingTerrain = false;
 
     constructor(
         position: Vector3,
@@ -73,9 +74,27 @@ export class CameraTerrainCollision {
     public reset(position: Vector3, target: Vector3): void {
         this.safePosition.copy(position);
         this.safeTarget.copy(target);
+        this.followingTerrain = false;
     }
 
-    /** Returns true when motion was blocked and the prior safe state restored. */
+    private acceptTerrainSlide(position: Vector3, target: Vector3, heightMap: HeightMap): boolean {
+        if (!heightMap.isInBounds(position.x, position.z)) return false;
+
+        const surfaceY = heightMap.getHeightAt(position.x, position.z) + this.clearance;
+        const heightAdjustment = surfaceY - position.y;
+        position.y = surfaceY;
+        target.y += heightAdjustment;
+        this.safePosition.copy(position);
+        this.safeTarget.copy(target);
+        this.followingTerrain = true;
+        return true;
+    }
+
+    /**
+     * Returns true when collision handling changed the requested transform.
+     * Orbit/zoom into terrain restores the prior safe state. Pan movement is
+     * allowed to slide across the surface and follows its height up or down.
+     */
     public resolve(position: Vector3, target: Vector3, heightMap: HeightMap): boolean {
         // Regeneration can raise terrain around a previously valid camera.
         // Lift that saved state (and its target by the same amount) before
@@ -88,21 +107,36 @@ export class CameraTerrainCollision {
             this.safeTarget.y += lift;
             position.copy(this.safePosition);
             target.copy(this.safeTarget);
+            this.followingTerrain = true;
             return true;
         }
 
-        if (cameraPathIntersectsTerrain(
+        const targetMoved = target.distanceToSquared(this.safeTarget) > 0.000001;
+        const intersectsTerrain = cameraPathIntersectsTerrain(
             this.safePosition,
             position,
             heightMap,
             this.clearance,
-        )) {
+        );
+
+        // OrbitControls moves camera and target together when panning. Once
+        // surface contact occurs, preserve that horizontal movement and adapt
+        // camera height to the new terrain instead of rejecting every input.
+        if (targetMoved && (intersectsTerrain || this.followingTerrain)) {
+            if (this.acceptTerrainSlide(position, target, heightMap)) return true;
+        }
+
+        if (intersectsTerrain) {
             position.copy(this.safePosition);
             target.copy(this.safeTarget);
+            this.followingTerrain = true;
             return true;
         }
 
-        this.reset(position, target);
+        this.safePosition.copy(position);
+        this.safeTarget.copy(target);
+        // A free zoom/orbit away from the surface exits terrain-follow mode.
+        if (!targetMoved) this.followingTerrain = false;
         return false;
     }
 }

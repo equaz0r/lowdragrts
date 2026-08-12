@@ -133,7 +133,7 @@ These should stay configurable or be decided through prototypes:
 - A retained heightmap with height, normal, slope, bounds and buildability queries.
 - One logical terrain grid used for visible neon lines and cell buildability.
 - A closed terrain-chunk presentation mesh: four metallic violet walls follow the boundary height samples and connect to a flat underside below the terrain minimum; a separate unlit grid overlay keeps the sides readable in dark lighting.
-- Swept camera collision against the current heightfield, preventing orbit, zoom or pan movement from entering or tunnelling through terrain.
+- Swept camera collision against the current heightfield: orbit/zoom cannot enter or tunnel through terrain, while surface pan slides laterally and adjusts camera/target height together across slopes.
 - Dynamic sun, sky and halo.
 - Terrain reflection/glitter shader and debug isolation view.
 - Edge-grid height colour ramp and pulse shader.
