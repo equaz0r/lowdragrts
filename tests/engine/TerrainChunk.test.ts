@@ -53,11 +53,11 @@ describe('TerrainChunk', () => {
     });
 
     it('adds side-grid outlines, bands, and vertical divisions', () => {
-        const geometry = createTerrainChunkGridGeometry(heights, 2, 2, 10);
+        const geometry = createTerrainChunkGridGeometry(heights, 2, 1024, 10);
         const position = geometry.getAttribute('position');
 
-        // 16 top/bottom + 24 intermediate + 8 vertical lines, two vertices each.
-        expect(position.count).toBe(96);
+        // Same-spacing horizontal bands plus every terrain-grid division vertically.
+        expect(position.count).toBe(72);
         expect(geometry.boundingBox?.min.y).toBe(-502);
         expect(geometry.boundingBox?.max.y).toBe(32);
     });

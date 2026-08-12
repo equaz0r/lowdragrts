@@ -50,7 +50,7 @@ This runs the full TypeScript check, isolated simulation check, automated tests,
 
 ## Controls (current build)
 
-- **Orbit / pan / zoom** — mouse drag / right-drag / scroll (Three.js `OrbitControls`)
+- **Orbit / pan / zoom** — mouse drag / right-drag / scroll (Three.js `OrbitControls`). Swept camera collision stops all three movement types before the camera enters or passes through terrain.
 - Several draggable debug panels are shown by default (Terrain Shape, Grid Appearance, Terrain Controls, Share/Save Settings, Performance Monitor). Use the arrow in any title bar to roll that panel down to its title only; it remains draggable. Positions and collapsed states persist across reloads, with a "Reset Panel Layout" button in Share/Save Settings.
 - Save/Load Settings panel exports the whole tunable scene (terrain shape, seed, grid colours, reflection/sun params) as JSON, and can re-import it.
 - The same panel shows the current 32-bit Terrain Seed and provides versioned Lighting Codes (`LDR-L1-…`) and Full Scene Codes (`LDR-S1-…`) for easy sharing. A terrain seed uses the recipient's current terrain sliders; a Full Scene Code reproduces all sliders as well.

@@ -20,8 +20,6 @@ const WALL_TOP_COLOR = new Color(0x6432a6);
 const WALL_BOTTOM_COLOR = new Color(0x16062b);
 const BOTTOM_COLOR = new Color(0x020006);
 const WALL_GRID_COLOR = new Color(0xa14cff);
-const WALL_GRID_BANDS = 4;
-const WALL_GRID_VERTICAL_INTERVAL = 4;
 const WALL_GRID_OFFSET = 0.75;
 
 type Point = readonly [x: number, y: number, z: number];
@@ -38,6 +36,28 @@ function pushVertex(
 
 function pushLine(positions: number[], a: Point, b: Point): void {
     positions.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+}
+
+/** Adds the visible part of a horizontal grid line below a sloping wall rim. */
+function pushClippedHorizontalLine(
+    positions: number[],
+    y: number,
+    alongA: number,
+    topA: number,
+    alongB: number,
+    topB: number,
+    pointAt: (along: number, height: number) => Point,
+): void {
+    if (y > Math.max(topA, topB)) return;
+
+    let clippedA = alongA;
+    let clippedB = alongB;
+    if (y > Math.min(topA, topB) && topA !== topB) {
+        const crossing = alongA + (alongB - alongA) * ((y - topA) / (topB - topA));
+        if (topA < y) clippedA = crossing;
+        else clippedB = crossing;
+    }
+    pushLine(positions, pointAt(clippedA, y), pointAt(clippedB, y));
 }
 
 function validateHeightfield(heights: Float32Array, divisions: number): number {
@@ -184,10 +204,6 @@ export function createTerrainChunkGridGeometry(
     const baseY = calculateTerrainChunkBaseY(minimumSurfaceHeight, worldSize);
     const positions: number[] = [];
     const heightAt = (x: number, z: number): number => heights[x + z * stride];
-    const bandY = (surfaceY: number, band: number): number => {
-        const fraction = band / WALL_GRID_BANDS;
-        return baseY + (surfaceY - baseY) * fraction;
-    };
 
     for (let i = 0; i < divisions; i++) {
         const low = -halfSize + i * segmentSize;
@@ -228,43 +244,25 @@ export function createTerrainChunkGridGeometry(
             [halfSize + WALL_GRID_OFFSET, baseY, low],
             [halfSize + WALL_GRID_OFFSET, baseY, high]);
 
-        // Intermediate horizontal bands form readable panels down each wall.
-        for (let band = 1; band < WALL_GRID_BANDS; band++) {
-            pushLine(positions,
-                [low, bandY(northLowY, band), -halfSize - WALL_GRID_OFFSET],
-                [high, bandY(northHighY, band), -halfSize - WALL_GRID_OFFSET]);
-            pushLine(positions,
-                [low, bandY(southLowY, band), halfSize + WALL_GRID_OFFSET],
-                [high, bandY(southHighY, band), halfSize + WALL_GRID_OFFSET]);
-            pushLine(positions,
-                [-halfSize - WALL_GRID_OFFSET, bandY(westLowY, band), low],
-                [-halfSize - WALL_GRID_OFFSET, bandY(westHighY, band), high]);
-            pushLine(positions,
-                [halfSize + WALL_GRID_OFFSET, bandY(eastLowY, band), low],
-                [halfSize + WALL_GRID_OFFSET, bandY(eastHighY, band), high]);
+        // Horizontal subdivisions use the exact same world spacing as the
+        // terrain grid. Lines are clipped against each sloping rim segment.
+        const highestRim = Math.max(northLowY, northHighY, southLowY, southHighY,
+            westLowY, westHighY, eastLowY, eastHighY);
+        for (let y = baseY + segmentSize; y < highestRim; y += segmentSize) {
+            pushClippedHorizontalLine(positions, y, low, northLowY, high, northHighY,
+                (along, height) => [along, height, -halfSize - WALL_GRID_OFFSET]);
+            pushClippedHorizontalLine(positions, y, low, southLowY, high, southHighY,
+                (along, height) => [along, height, halfSize + WALL_GRID_OFFSET]);
+            pushClippedHorizontalLine(positions, y, low, westLowY, high, westHighY,
+                (along, height) => [-halfSize - WALL_GRID_OFFSET, height, along]);
+            pushClippedHorizontalLine(positions, y, low, eastLowY, high, eastHighY,
+                (along, height) => [halfSize + WALL_GRID_OFFSET, height, along]);
         }
     }
 
-    // Vertical divisions continue the surface grid down the walls, thinned to
-    // every fourth height sample so the sides remain legible from a distance.
-    for (let i = 0; i <= divisions; i += WALL_GRID_VERTICAL_INTERVAL) {
+    // Every surface-grid division continues down the side at the same spacing.
+    for (let i = 0; i <= divisions; i++) {
         const along = -halfSize + i * segmentSize;
-        pushLine(positions,
-            [along, heightAt(i, 0), -halfSize - WALL_GRID_OFFSET],
-            [along, baseY, -halfSize - WALL_GRID_OFFSET]);
-        pushLine(positions,
-            [along, heightAt(i, divisions), halfSize + WALL_GRID_OFFSET],
-            [along, baseY, halfSize + WALL_GRID_OFFSET]);
-        pushLine(positions,
-            [-halfSize - WALL_GRID_OFFSET, heightAt(0, i), along],
-            [-halfSize - WALL_GRID_OFFSET, baseY, along]);
-        pushLine(positions,
-            [halfSize + WALL_GRID_OFFSET, heightAt(divisions, i), along],
-            [halfSize + WALL_GRID_OFFSET, baseY, along]);
-    }
-    if (divisions % WALL_GRID_VERTICAL_INTERVAL !== 0) {
-        const i = divisions;
-        const along = halfSize;
         pushLine(positions,
             [along, heightAt(i, 0), -halfSize - WALL_GRID_OFFSET],
             [along, baseY, -halfSize - WALL_GRID_OFFSET]);
@@ -294,16 +292,16 @@ export function createTerrainChunkMesh(
 ): Mesh {
     const material = new MeshPhysicalMaterial({
         vertexColors: true,
-        metalness: 0.45,
-        roughness: 0.32,
+        metalness: 0.3,
+        roughness: 0.2,
         flatShading: true,
-        emissive: new Color(0x100020),
-        emissiveIntensity: 0.8,
-        clearcoat: 0.35,
-        clearcoatRoughness: 0.3,
-        sheen: 0.3,
-        sheenColor: new Color(0x7028b8),
-        sheenRoughness: 0.45,
+        emissive: new Color(0x260848),
+        emissiveIntensity: 1.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.12,
+        sheen: 1.0,
+        sheenColor: new Color(0xc05cff),
+        sheenRoughness: 0.25,
     });
     const mesh = new Mesh(
         createTerrainChunkGeometry(heights, divisions, worldSize, minimumSurfaceHeight),

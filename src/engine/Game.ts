@@ -9,6 +9,7 @@ import { TerrainControls } from './ui/TerrainControls';
 import { EdgeControls } from './ui/EdgeControls';
 import { SettingsIO } from './ui/SettingsIO';
 import { CameraParameters } from './config/CameraConfig';
+import { CameraTerrainCollision } from './camera/CameraTerrainCollision';
 
 export class Game {
     private scene: THREE.Scene;
@@ -16,6 +17,7 @@ export class Game {
     private renderer: THREE.WebGLRenderer;
     private composer: EffectComposer;
     private controls: OrbitControls | null = null;
+    private cameraTerrainCollision: CameraTerrainCollision | null = null;
     private gridSystem: GridSystem | null = null;
     private terrainGenerator: TerrainGenerator | null = null;
     private terrainControls: TerrainControls | null = null;
@@ -104,6 +106,10 @@ export class Game {
         this.controls.minDistance = 100;
         this.controls.maxPolarAngle = Math.PI * 0.65;
         this.controls.minPolarAngle = 0.1;
+        this.cameraTerrainCollision = new CameraTerrainCollision(
+            this.camera.position,
+            this.controls.target,
+        );
 
         // Initialize lighting first using singleton pattern
         this.lightingSystem = LightingSystem.getInstance(this.scene, this.camera);
@@ -125,6 +131,7 @@ export class Game {
             if (this.controls) {
                 this.controls.target.set(0, 0, 0);
                 this.controls.update();
+                this.cameraTerrainCollision?.reset(this.camera.position, this.controls.target);
             }
         });
         this.edgeControls = new EdgeControls(this.terrainGenerator);
@@ -170,6 +177,20 @@ export class Game {
         // Update controls
         if (this.controls) {
             this.controls.update();
+            const heightMap = this.terrainGenerator?.getHeightMap();
+            if (heightMap) {
+                const blocked = this.cameraTerrainCollision?.resolve(
+                    this.camera.position,
+                    this.controls.target,
+                    heightMap,
+                );
+                if (blocked) {
+                    // OrbitControls already aimed the camera from the rejected
+                    // position. Re-aim immediately from the restored safe one
+                    // so there is no single-frame view jump at a collision.
+                    this.camera.lookAt(this.controls.target);
+                }
+            }
         }
 
         // Update performance monitor
@@ -189,6 +210,7 @@ export class Game {
             this.controls.dispose();
             this.controls = null;
         }
+        this.cameraTerrainCollision = null;
         if (this.terrainControls) {
             this.terrainControls.dispose();
         }

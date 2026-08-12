@@ -48,6 +48,10 @@ src/
     │   ├── ReflectionState.ts      # One live reflection/glitter state shared by UI + materials
     │   └── CameraConfig.ts         # CameraParameters (wired into Game.ts)
     │
+    ├── camera/
+    │   └── CameraTerrainCollision.ts # Sweeps OrbitControls motion against HeightMap; rejected
+    │                                 #   zoom/pan/orbit restores camera + target to last safe state
+    │
     ├── terrain/
     │   ├── TerrainGenerator.ts     # Heightmap generation loop, plateau + region-mask logic,
     │   │                           #   buffer management, update tick, presets
@@ -120,7 +124,8 @@ tools/
 - ✅ Region-masked flatland/mountain zoning — coherent flat regions with mountains rising out of them, not uniform ruggedness. On by default (`regionMaskEnabled`), off in the Rolling preset.
 - ✅ Plateau build-sites — deterministic (seeded `Rng`) flat circular sites, `TerrainControls` sliders, `getPlateauSites()`
 - ✅ Unified terrain grid (`TerrainGrid.ts`) — one geometry drives both the neon visual and buildability
-- ✅ Closed terrain chunk (`TerrainChunk.ts`) — the outer height samples form four metallic violet walls down to a flat underside, with an unlit side grid for readable shape; separate child geometry keeps future boundary-deformation updates small
+- ✅ Closed terrain chunk (`TerrainChunk.ts`) — the outer height samples form four metallic violet walls down to a flat underside, with an unlit 64-unit side grid matching the surface grid; separate child geometry keeps future boundary-deformation updates small
+- ✅ Camera/terrain collision (`CameraTerrainCollision.ts`) — sweep-tests motion between frames so zoom, pan and orbit stop before entering terrain; restores both camera and OrbitControls target to prevent repeated movement through the surface
 - ✅ Dynamic lighting — flat billboarded sun disc (not a sphere, avoids perspective-curved scanlines), sky gradient, halo, retro scanlines, day/night
 - ✅ Terrain reflection shader — tinted by the sun's live colour
 - ✅ Edge grid shader — 5-layer GPU height-ramp (synthwave: navy→purple→pink→orange) + animated electric pulse
@@ -284,6 +289,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Added a shared roll-up/down arrow to every debug panel. Collapsing hides everything except the draggable title bar, persists per panel across reloads, and Reset Panel Layout clears both positions and collapsed states. |
 | 12 Aug 2026 | Closed the terrain into a solid-looking chunk: four segmented side walls follow the exact boundary height samples and descend to a flat underside below the generation minimum. Kept it as disposable child geometry so future deformation only needs to update it when damage reaches a map edge; added geometry/winding tests. |
 | 12 Aug 2026 | Improved terrain-chunk readability: brighter violet wall gradient, emissive metallic clearcoat/sheen, plus an unlit purple overlay with top/bottom outlines, horizontal bands and thinned vertical grid divisions. Added coverage for the grid geometry bounds/count. |
+| 12 Aug 2026 | Matched the terrain-chunk grid to the surface's 64-unit spacing vertically and horizontally, clipping side lines beneath the uneven rim; strengthened the wall sheen. Added swept camera/heightfield collision so zoom, pan or orbit motion cannot tunnel into/through terrain, including fast movement and terrain regeneration recovery. |
 
 ---
 *Update this file at the end of every coding session.*
