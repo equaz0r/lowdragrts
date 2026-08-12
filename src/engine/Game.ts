@@ -179,10 +179,15 @@ export class Game {
     }
 
     public dispose(): void {
+        if (this.disposed) return;
         this.disposed = true;
         if (this.resizeHandler) {
             window.removeEventListener('resize', this.resizeHandler);
             this.resizeHandler = null;
+        }
+        if (this.controls) {
+            this.controls.dispose();
+            this.controls = null;
         }
         if (this.terrainControls) {
             this.terrainControls.dispose();
@@ -201,9 +206,11 @@ export class Game {
         }
         this.composer.dispose();
         this.renderer.dispose();
-        document.body.removeChild(this.renderer.domElement);
+        if (this.renderer.domElement.parentNode) {
+            this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+        }
 
         // Dispose of performance monitor
         this.performanceMonitor.dispose();
     }
-} 
+}

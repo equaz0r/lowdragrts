@@ -141,6 +141,7 @@ export class TerrainGenerator {
     private plateauSites: PlateauSite[] = [];
     private regenerateListeners: Set<() => void> = new Set();
     private buildableCells: BuildableCells | null = null;
+    private disposed: boolean = false;
 
     constructor(scene: Scene, gridSystem: GridSystem, camera: PerspectiveCamera, lightingSystem: LightingSystem) {
         this.scene = scene;
@@ -195,11 +196,60 @@ export class TerrainGenerator {
         }
     }
 
+    /**
+     * Removes the current terrain object and disposes all render resources
+     * owned by that object. The root surface geometry is deliberately handled
+     * by disposeGeometry(), because its typed arrays belong to BufferPool;
+     * child geometry (currently the neon TerrainGrid) is ordinary allocated
+     * memory and must be disposed here on every regeneration.
+     */
+    private disposeTerrainMesh(): void {
+        if (!this.terrainMesh) return;
+
+        const root = this.terrainMesh;
+        this.scene.remove(root);
+
+        root.traverse((object) => {
+            if (object === root) return;
+            const renderable = object as unknown as {
+                geometry?: BufferGeometry;
+                material?: Material | Material[];
+            };
+            renderable.geometry?.dispose();
+            if (Array.isArray(renderable.material)) {
+                renderable.material.forEach(material => material.dispose());
+            } else {
+                renderable.material?.dispose();
+            }
+        });
+
+        if (Array.isArray(root.material)) {
+            root.material.forEach(material => material.dispose());
+        } else {
+            root.material.dispose();
+        }
+
+        this.terrainMesh = null;
+        this.material = null;
+        this.edgeUniforms = null;
+    }
+
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     private async initialize(): Promise<void> {
         try {
-            this.terrainMesh = await this.generate();
+            const mesh = await this.generate();
+            if (this.disposed) {
+                // Disposal can race the constructor's async continuation
+                // during HMR. Adopt the generated mesh briefly so the normal
+                // cleanup path can release it instead of adding it to a dead
+                // scene after Game.dispose().
+                this.terrainMesh = mesh;
+                this.disposeTerrainMesh();
+                this.disposeGeometry();
+                return;
+            }
+            this.terrainMesh = mesh;
             this.scene.add(this.terrainMesh);
             if (this.terrainMesh.material instanceof Material) {
                 this.material = this.terrainMesh.material;
@@ -212,18 +262,20 @@ export class TerrainGenerator {
     // newSeed=true (Regenerate button): randomises terrain topology
     // newSeed=false (slider change): rebuilds with same topology, new parameters
     public async regenerate(newSeed: boolean = true): Promise<void> {
-        if (this.terrainMesh) {
-            this.scene.remove(this.terrainMesh);
-            if (this.terrainMesh.material instanceof Material) {
-                (this.terrainMesh.material as Material).dispose();
-            }
-            this.terrainMesh = null;
-        }
+        if (this.disposed) return;
+        this.disposeTerrainMesh();
         if (newSeed) {
             this.seed = newRandomSeed();
         }
         try {
-            this.terrainMesh = await this.generate();
+            const mesh = await this.generate();
+            if (this.disposed) {
+                this.terrainMesh = mesh;
+                this.disposeTerrainMesh();
+                this.disposeGeometry();
+                return;
+            }
+            this.terrainMesh = mesh;
             this.scene.add(this.terrainMesh);
             if (this.terrainMesh.material instanceof Material) {
                 this.material = this.terrainMesh.material;
@@ -234,15 +286,10 @@ export class TerrainGenerator {
     }
 
     public dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.disposeTerrainMesh();
         this.disposeGeometry();
-        if (this.material) {
-            this.material.dispose();
-            this.material = null;
-        }
-        if (this.terrainMesh) {
-            this.scene.remove(this.terrainMesh);
-            this.terrainMesh = null;
-        }
         Object.values(this.currentBuffers).forEach(buffer => {
             if (buffer) this.bufferPool.releaseBuffer(buffer);
         });
@@ -253,6 +300,7 @@ export class TerrainGenerator {
         this.heightMap = null;
         this.buildableCells = null;
         this.regenerateListeners.clear();
+        this.bufferPool.dispose();
     }
 
     // ─── Terrain generation ───────────────────────────────────────────────────

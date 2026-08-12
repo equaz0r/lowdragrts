@@ -192,7 +192,8 @@ Three tiers, cheapest to most expensive — only the first is built:
 ## Singleton Rules
 - `LightingSystem` and `PerformanceMonitor` are singletons — always use `getInstance()`, never `new` directly
 - Both clear static instance in `dispose()` so HMR creates a fresh instance correctly
-- `Game.dispose()` stops animate() loop (`disposed` flag), removes resize listener, disposes composer + all singletons in order
+- `Game.dispose()` is idempotent, stops animate() via its `disposed` flag, removes the resize listener, disposes OrbitControls and guards DOM removal. `TerrainGenerator.dispose()` also clears the singleton BufferPool.
+- Terrain regeneration disposes the root surface material plus the child neon-grid geometry/material; the root geometry's pooled typed arrays are released separately by `disposeGeometry()`. Keep that ownership split to avoid grid leaks or returning live surface buffers to the pool.
 
 ## HeightMap API (src/engine/terrain/HeightMap.ts)
 All gameplay systems get terrain data via `terrainGenerator.getHeightMap()`. Available after first `generate()`, replaced on each `regenerate()` — **no change notification**, don't cache the reference across a regen.
@@ -257,6 +258,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Began Phase 2.5 stabilisation on `feature/phase-2-5-stabilisation`. Fixed a coordinate-space mismatch in `TerrainMaterial.ts`: the custom reflection shader was comparing a view-space normal (`normalMatrix * normal`) with world-space sun/camera/fragment vectors. `vWorldNormal` now converts back through Three's `inverseTransformDirection(..., viewMatrix)`. Typecheck, Webpack and numerical checks passed; live testing then confirmed the forward glint is substantially better targeted and the back glint works reasonably well. Minor panel-edge bleed is deferred as non-blocking polish. |
 | 12 Aug 2026 | Centralised reflection/glitter ownership in `TerrainReflectionState`: controls and shader uniforms now share live vectors, regenerated materials reuse the current values, and uniform edits no longer trigger shader recompilation. Sun settings export the live intensity target, and the intensity slider now also affects terrain illumination rather than being overwritten every frame. |
 | 12 Aug 2026 | Fixed `HeightMap.worldToGrid()` boundary extrapolation: fractional grid coordinates are now clamped before cell/fraction derivation, so off-map queries resolve to edge heights and edge normals no longer sample invented values. |
+| 12 Aug 2026 | Hardened regeneration/HMR cleanup: terrain child grid geometry/material now dispose on every regeneration, surface buffers retain their separate BufferPool release path, `TerrainGenerator` handles async initialise/regenerate disposal races, and `Game.dispose()` is idempotent and disposes OrbitControls safely. |
 
 ---
 *Update this file at the end of every coding session.*
