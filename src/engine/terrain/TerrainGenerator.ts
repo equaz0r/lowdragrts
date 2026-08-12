@@ -412,11 +412,15 @@ export class TerrainGenerator {
             // uses Three's own built-in `cameraPosition` uniform (auto-updated
             // every frame) and computes the view direction per-fragment.
             //
-            // sunWorldPosition feeds the (deliberately fake, screen-space) sun
-            // glint — see calculateReflection() in TerrainMaterial.ts for why
-            // this replaced the physically-correct reflect()-based approach.
+            // sunWorldPosition feeds the sun glitter wedge — see
+            // calculateSunGlitter() in TerrainMaterial.ts.
             if (shader.uniforms.sunWorldPosition) {
                 shader.uniforms.sunWorldPosition.value.copy(this.lightingSystem.getSunPosition());
+            }
+            // Glitter width auto-scales with the sun's apparent size (12 Aug
+            // 2026, round 17) — see calculateSunGlitter()'s width curve.
+            if (shader.uniforms.sunHeightT) {
+                shader.uniforms.sunHeightT.value = this.lightingSystem.getSunHeightNormalized();
             }
             // Assign .value, don't replace the uniform object — swapping the
             // object every frame defeats onBeforeCompile's uniform wiring and

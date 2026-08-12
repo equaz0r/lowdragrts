@@ -43,25 +43,34 @@ const GLITTER_SHARD_SIZE = 64; // GridParameters.CELL_SIZE — shards snap to th
 const GLITTER_ALONG_NEAR = 250;
 const GLITTER_ALONG_FAR = 2500;
 const GLITTER_WIDTH_NEAR = 70;
-const GLITTER_WIDTH_FAR = 1200;
+// Round 17 (12 Aug 2026) — far-end width auto-scales with sun height (fit
+// against Simon's example points, see TerrainMaterial.ts for the full
+// derivation). WIDTH_MULT simulates the "Glitter Width x" slider (1.0 =
+// unmodified curve).
+const GLITTER_WIDTH_AUTO_MIN = 250;
+const GLITTER_WIDTH_AUTO_MAX = 3000;
+const GLITTER_WIDTH_CURVE_POWER = 1.25;
+const GLITTER_WIDTH_MULT = 1.0;
 const GLITTER_WIDTH_POWER = 0.8;
-const GLITTER_SPARKLE_CONTRAST = 2.5;
+const GLITTER_SPARKLE_CONTRAST = 3.2;
 const GLITTER_SHARD_SEAM = 0.06;
-const GLITTER_BASE_GLOW = 0.25;
+const GLITTER_BASE_GLOW = 0.12;
+const GLITTER_SHARD_GLOW_FLOOR = 0.35;
 
 // --- Keep in sync with LightingSystem.ts's updateSunPosition() ---
 const SUN_ORBIT_RADIUS = 8000;
 const SUN_MAX_ANGLE = 2.6451383319538957;
 const SUN_MIN_ANGLE = 3.0978286848490466;
 const SUN_MIN_HEIGHT = -0.8, SUN_MAX_HEIGHT = 0.65;
+function sunHeightNormalized(h) { return (h - SUN_MIN_HEIGHT) / (SUN_MAX_HEIGHT - SUN_MIN_HEIGHT); }
 function sunPosForHeight(h) {
-    const nh = (h - SUN_MIN_HEIGHT) / (SUN_MAX_HEIGHT - SUN_MIN_HEIGHT);
+    const nh = sunHeightNormalized(h);
     const angle = SUN_MIN_ANGLE - (nh * (SUN_MIN_ANGLE - SUN_MAX_ANGLE));
     return [Math.cos(angle) * SUN_ORBIT_RADIUS, Math.sin(angle) * SUN_ORBIT_RADIUS, 0];
 }
 
 // --- calculateSunGlitter(), translated 1:1 from the GLSL ---
-function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
+function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time, sunHeightT) {
     const camXZ = [camPos[0], camPos[2]];
     const sunXZ = [sunPos[0], sunPos[2]];
     const fragXZ = [worldPos[0], worldPos[2]];
@@ -76,8 +85,12 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
     const lateralOffset = Math.hypot(perp[0], perp[1]);
 
     const t = clamp((along - GLITTER_ALONG_NEAR) / (GLITTER_ALONG_FAR - GLITTER_ALONG_NEAR), 0, 1);
-    const allowedWidth = mix(GLITTER_WIDTH_NEAR, GLITTER_WIDTH_FAR, Math.pow(t, GLITTER_WIDTH_POWER));
-    const wedgeFactor = 1.0 - smoothstep(allowedWidth*0.5, allowedWidth, lateralOffset);
+    // Far-end width auto-scales with the sun's apparent size (round 17).
+    const autoWidthFar = mix(GLITTER_WIDTH_AUTO_MIN, GLITTER_WIDTH_AUTO_MAX, Math.pow(1 - sunHeightT, GLITTER_WIDTH_CURVE_POWER)) * GLITTER_WIDTH_MULT;
+    const allowedWidth = mix(GLITTER_WIDTH_NEAR, autoWidthFar, Math.pow(t, GLITTER_WIDTH_POWER));
+    // Falloff spans the FULL width now (was allowedWidth*0.5 to
+    // allowedWidth) — one continuous gradient, brightest at the centreline.
+    const wedgeFactor = 1.0 - smoothstep(0, allowedWidth, lateralOffset);
 
     // Grid-aligned cell (12 Aug 2026) — snaps to the exact same cells the
     // visible neon grid draws (GridSystem.worldToCell()'s +mapSize/2 half-
@@ -96,6 +109,12 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time) {
     const distToEdge = Math.min(edgeDist[0], edgeDist[1]);
     const shardMask = smoothstep(0, GLITTER_SHARD_SEAM, distToEdge);
     sparkle *= shardMask;
+
+    // Radial glow from the shard's own centre (round 17) — brightest in the
+    // middle, fading toward its edges, like a small soft highlight.
+    const distFromShardCenter = Math.hypot(shardFrac[0]-0.5, shardFrac[1]-0.5);
+    const shardGlow = 1.0 - smoothstep(0, 0.5, distFromShardCenter);
+    sparkle *= mix(GLITTER_SHARD_GLOW_FLOOR, 1.0, shardGlow);
 
     const sunDir = norm3(sub3(sunPos, worldPos));
     const facingSunGate = smoothstep(-0.05, 0.05, dot3(geomNormal, sunDir));
@@ -130,7 +149,7 @@ function makeCamera(pos, look, fovDeg, aspect) {
     };
 }
 
-function renderScreenAscii(cam, sunPos, times, label, W=70, H=45) {
+function renderScreenAscii(cam, sunPos, times, label, sunHeightT=0.5, W=70, H=45) {
     const screen = Array.from({length:H}, () => new Array(W).fill(' '));
     const geomNormal = [0,1,0]; // flat ground — the stress-test case (no slope variety to help)
     for (let py = 0; py < H; py++) {
@@ -145,7 +164,7 @@ function renderScreenAscii(cam, sunPos, times, label, W=70, H=45) {
             if (Math.hypot(worldPos[0], worldPos[2]) > 7000) continue;
             let maxVal = 0;
             for (const t of times) {
-                const v = calculateSunGlitter(worldPos, geomNormal, sunPos, cam.pos, t);
+                const v = calculateSunGlitter(worldPos, geomNormal, sunPos, cam.pos, t, sunHeightT);
                 if (v > maxVal) maxVal = v;
             }
             screen[py][px] = maxVal > 0.6 ? '#' : (maxVal > 0.25 ? '+' : (maxVal > 0.05 ? '.' : ' '));
@@ -163,18 +182,29 @@ function renderScreenAscii(cam, sunPos, times, label, W=70, H=45) {
     for (const row of screen) console.log(row.join(''));
 }
 
-const sunPos = sunPosForHeight(-0.79); // matches Simon's "low, big sun" test screenshots
+const testSunHeight = -0.79; // matches Simon's "low, big sun" test screenshots
+const sunPos = sunPosForHeight(testSunHeight);
+const testSunHeightT = sunHeightNormalized(testSunHeight);
 const times = [5, 33, 71, 140, 210, 300, 380];
 
-renderScreenAscii(makeCamera([3200,450,0], [0,150,0], 75, 0.7), sunPos, times, 'Camera aligned with sun azimuth, moderate height');
-renderScreenAscii(makeCamera([1800,250,200], [0,120,0], 75, 0.7), sunPos, times, 'Lower/closer camera');
+renderScreenAscii(makeCamera([3200,450,0], [0,150,0], 75, 0.7), sunPos, times, 'Camera aligned with sun azimuth, moderate height', testSunHeightT);
+renderScreenAscii(makeCamera([1800,250,200], [0,120,0], 75, 0.7), sunPos, times, 'Lower/closer camera', testSunHeightT);
 // Off-axis: NOT looking directly at the sun — this is the realistic case
 // (players don't perfectly centre the sun) and the one that exposed the
 // "reads as misaligned" complaint on 11 Aug 2026. The wedge won't
 // perfectly converge on 'S' near the camera (that's real geometry, not a
 // bug — see the GLITTER_* comment block in TerrainMaterial.ts) but should
 // get close to it and be wide enough that the imprecision isn't obvious.
-renderScreenAscii(makeCamera([2000,500,1500], { forward: [-0.8,-0.15,-0.5] }, 75, 0.7), sunPos, times, 'Off-axis camera (not looking directly at the sun)');
+renderScreenAscii(makeCamera([2000,500,1500], { forward: [-0.8,-0.15,-0.5] }, 75, 0.7), sunPos, times, 'Off-axis camera (not looking directly at the sun)', testSunHeightT);
+
+// Auto width-vs-sun-height curve check (round 17) — verify the fitted curve
+// against Simon's own example points before trusting it.
+console.log('\n=== Auto width curve check (Simon\'s example points) ===');
+for (const [h, target] of [[-0.80,3000],[-0.05,1250],[0.28,850],[0.65,250]]) {
+    const t = sunHeightNormalized(h);
+    const computed = mix(GLITTER_WIDTH_AUTO_MIN, GLITTER_WIDTH_AUTO_MAX, Math.pow(1-t, GLITTER_WIDTH_CURVE_POWER));
+    console.log(`  height=${h.toFixed(2)} target=${target} computed=${computed.toFixed(0)}`);
+}
 
 console.log('\nExpected: a wedge WIDE near the top (horizon/sun) narrowing toward the bottom (camera),');
 console.log('surrounding or close to the marked S (sun\'s true screen position) even off-axis.');

@@ -117,29 +117,60 @@ const GLITTER_SHARD_SEAM = 0.06;
 // reliably visible regardless of scene brightness. diffuseColor mixing
 // stays too (harmless, adds a bit of properly-lit richness when there IS
 // enough ambient/sun light) — this is additive on top, not a replacement.
-const GLINT_EMISSIVE_INTENSITY = 1.0;
-// Wedge envelope: WIDTH_NEAR/WIDTH_FAR are world-unit half-widths of the
-// glitter band at ALONG_NEAR/ALONG_FAR (world-unit distances from the camera
-// along the camera->sun ground axis — NOT distance to the sun itself, which
-// is 8000+ units away and mostly off the visible terrain). ALONG_NEAR isn't
-// 0: for most camera angles the ground directly at the camera's feet isn't
-// even in the view frustum (you're not looking straight down), so the
-// visible "near" end of the wedge is always some distance out — verified
-// against the simulated camera frustum, not guessed. ALONG_FAR/WIDTH_FAR
-// below are just the INITIAL values for the `glitterReach` uniform (live
-// slider-adjustable from here on) — NEAR_WIDTH/ALONG_NEAR/WIDTH_POWER stay
-// baked constants, less critical to live-tune than reach/width were.
+// Boosted (was 1.0) — Simon: still looks "a bit flat", needs to be brighter
+// and read more like a real shiny reflection (12 Aug 2026, round 17).
+const GLINT_EMISSIVE_INTENSITY = 2.2;
+// Wedge envelope: WIDTH_NEAR is the world-unit half-width of the glitter
+// band at ALONG_NEAR (world-unit distance from the camera along the
+// camera->sun ground axis — NOT distance to the sun itself, which is 8000+
+// units away and mostly off the visible terrain). ALONG_NEAR isn't 0: for
+// most camera angles the ground directly at the camera's feet isn't even in
+// the view frustum (you're not looking straight down), so the visible
+// "near" end of the wedge is always some distance out — verified against
+// the simulated camera frustum, not guessed. ALONG_FAR below is just the
+// INITIAL value for the `glitterReach` uniform's x component (live
+// slider-adjustable from here on, and Simon wants its range extended —
+// see ReflectionControls.ts).
 const GLITTER_ALONG_NEAR  = 250;
 const GLITTER_ALONG_FAR   = 2500;   // was 6000 — reach full width much sooner
 const GLITTER_WIDTH_NEAR  = 70;     // was 50
-const GLITTER_WIDTH_FAR   = 1200;   // was 1800 — see glitterReach uniform, live-adjustable
+// Round 17 (12 Aug 2026) — the far-end width is no longer a flat constant:
+// Simon wants it to automatically track the sun's apparent size (bigger/
+// lower sun -> wider glitter), giving example points (sun height -> desired
+// width): -0.80 (biggest sun) -> 3000, -0.05 -> 1250, 0.28 -> 850, 0.65
+// (smallest sun) -> 250. Fit as a power curve over sunHeightT (same 0..1
+// normalisation LightingSystem already uses for the sun's OWN size/colour
+// curves — see getSunHeightNormalized()): width = mix(MIN, MAX,
+// (1-sunHeightT)^POWER). POWER=1.25 is a compromise fit across Simon's two
+// middle data points (their two-point fits gave ~1.11 and ~1.39
+// independently — a single power curve can't hit both exactly, this splits
+// the difference) — retune if it's visibly off at a specific height.
+// glitterReach.y (the old absolute-width uniform) is now a MULTIPLIER on
+// top of this curve, not a replacement for it.
+const GLITTER_WIDTH_AUTO_MIN   = 250;   // at sunHeightT = 1 (highest/smallest sun)
+const GLITTER_WIDTH_AUTO_MAX   = 3000;  // at sunHeightT = 0 (lowest/biggest sun)
+const GLITTER_WIDTH_CURVE_POWER = 1.25;
 const GLITTER_WIDTH_POWER = 0.8;    // was 1.4 (>1 = slow start) — now <1 = fast early growth
-const GLITTER_SPARKLE_CONTRAST = 2.5; // higher = fewer, brighter individual flecks vs. an even wash
+// Lower base contrast floor + higher exponent (was 0.25 / 2.5) — Simon
+// wants fewer, more dramatic peaks ("classic glint/reflection") rather than
+// a broad even wash; see GLITTER_BASE_GLOW below for the paired change.
+const GLITTER_SPARKLE_CONTRAST = 3.2;
 // Floor so the wedge's SHAPE stays visible even where the sparkle noise
 // happens to be dim that frame — without this, a narrow/sparse stretch (e.g.
 // near the camera, where fewer noise cells fit across the width) could look
 // "empty" purely by noise bad luck rather than reading as a deliberate taper.
-const GLITTER_BASE_GLOW = 0.25;
+// Lowered (was 0.25) alongside SPARKLE_CONTRAST's increase above — dimmer
+// "cold" shards read as more of a backdrop, so the bright ones pop by
+// contrast instead of everything sitting in a similar mid-range ("flat").
+const GLITTER_BASE_GLOW = 0.12;
+// Per-shard radial falloff (round 17) — a shard's brightest point is now its
+// CENTRE, fading toward its edges, like a small soft highlight/blob instead
+// of a flat-coloured rectangle. This is the main lever for "flat colour" vs
+// "looks like an actual glint": a uniform-brightness rectangle reads as
+// paint; a bright centre fading outward reads as light. Floor (not 0) so
+// shard edges dim rather than vanish completely — keeps the grid-square
+// read from GLITTER_SHARD_SEAM legible alongside the softer glow.
+const GLITTER_SHARD_GLOW_FLOOR = 0.35;
 
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
@@ -179,12 +210,22 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
         s.uniforms.heightScale     = { value: heightScale };
-        // Sun glitter reach/width (x = GLITTER_ALONG_FAR, y = GLITTER_WIDTH_FAR) —
-        // live-adjustable via ReflectionControls' "Sun Glitter" sliders, NOT baked
-        // into the shader template like the other GLITTER_* constants, because how
-        // far the wedge needs to reach before hitting full width depends on the
+        // Sun glitter reach/width multiplier — live-adjustable via
+        // ReflectionControls' "Sun Glitter" sliders, NOT baked into the shader
+        // template like the other GLITTER_* constants, because how far the
+        // wedge needs to reach before hitting full width depends on the
         // player's actual camera distance, which only live tuning can answer.
-        s.uniforms.glitterReach    = { value: new Vector2(GLITTER_ALONG_FAR, GLITTER_WIDTH_FAR) };
+        // x = GLITTER_ALONG_FAR (world units, absolute, as before). y used to
+        // be GLITTER_WIDTH_FAR (an absolute width) — as of 12 Aug 2026 it's a
+        // MULTIPLIER (default 1.0) on top of the auto-computed, sun-height-
+        // driven width below, since Simon wants width to track the sun's
+        // apparent size automatically, with the slider just for fine
+        // adjustment on top of that curve, not overriding it outright.
+        s.uniforms.glitterReach    = { value: new Vector2(GLITTER_ALONG_FAR, 1.0) };
+        // Smoothed sun height, normalised 0 (lowest/biggest sun) .. 1
+        // (highest/smallest) — drives the glitter width's automatic scaling.
+        // Pushed live each frame in TerrainGenerator.update().
+        s.uniforms.sunHeightT      = { value: 0.5 };
         // Debug isolation mode (11 Aug 2026, round 10) — after several rounds
         // where it was genuinely unclear whether the visible "reflection" was
         // sunGlitter, the ambient weighted-sum terms, or Three's own built-in
@@ -233,7 +274,8 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             // (nothing read it); calculateSunGlitter()'s shard-grid alignment
             // needs it now (12 Aug 2026).
             uniform float gridSize;
-            uniform vec2 glitterReach; // x = along-distance for full width, y = full width itself
+            uniform vec2 glitterReach; // x = along-distance for full width, y = width MULTIPLIER (see below)
+            uniform float sunHeightT; // 0 (lowest/biggest sun) .. 1 (highest/smallest) — drives auto width
             uniform float debugShowGlitter; // >0.5 = render calculateSunGlitter()'s raw output only
             varying vec3 vWorldPosition;
             varying vec3 vWorldNormal;
@@ -294,14 +336,30 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 vec2 perp = toFrag - axis * along;
                 float lateralOffset = length(perp);
 
-                // glitterReach.x/.y (alongFar/widthFar) are live-adjustable — see
-                // the uniform declaration above for why. max() guard: same
-                // smoothstep/divide-by-zero gotcha as reflectionParams.z elsewhere
-                // in this file if the reach slider ever got dragged down to
+                // glitterReach.x (alongFar) is live-adjustable — see the uniform
+                // declaration above for why. max() guard: same smoothstep/
+                // divide-by-zero gotcha as reflectionParams.z elsewhere in this
+                // file if the reach slider ever got dragged down to
                 // GLITTER_ALONG_NEAR exactly.
                 float t = clamp((along - ${GLITTER_ALONG_NEAR.toFixed(1)}) / max(1.0, glitterReach.x - ${GLITTER_ALONG_NEAR.toFixed(1)}), 0.0, 1.0);
-                float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, glitterReach.y, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
-                float wedgeFactor = 1.0 - smoothstep(allowedWidth * 0.5, allowedWidth, lateralOffset);
+                // Far-end width auto-scales with the sun's apparent size —
+                // glitterReach.y is now a MULTIPLIER on this curve, not an
+                // absolute width. See GLITTER_WIDTH_AUTO_MIN/MAX/CURVE_POWER
+                // above for the data this was fit against.
+                float autoWidthFar = mix(
+                    ${GLITTER_WIDTH_AUTO_MIN.toFixed(1)},
+                    ${GLITTER_WIDTH_AUTO_MAX.toFixed(1)},
+                    pow(1.0 - sunHeightT, ${GLITTER_WIDTH_CURVE_POWER.toFixed(2)})
+                ) * glitterReach.y;
+                float allowedWidth = mix(${GLITTER_WIDTH_NEAR.toFixed(1)}, autoWidthFar, pow(t, ${GLITTER_WIDTH_POWER.toFixed(2)}));
+                // Falloff now spans the FULL width (was allowedWidth*0.5 to
+                // allowedWidth — a flat, fully-bright inner half then a
+                // fade). Simon: "increase the falloff massively... central
+                // bright core" — starting the fade at the centre instead of
+                // halfway out gives one continuous gradient, brightest at the
+                // wedge's own centreline and soft all the way to its edge,
+                // rather than a plateau-then-cliff.
+                float wedgeFactor = 1.0 - smoothstep(0.0, allowedWidth, lateralOffset);
 
                 // Grid-aligned cell coordinate — SAME +mapSize/2 half-offset
                 // GridSystem.worldToCell() uses (the grid's own origin isn't
@@ -338,6 +396,19 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float distToEdge = min(edgeDist.x, edgeDist.y);
                 float shardMask = smoothstep(0.0, ${GLITTER_SHARD_SEAM.toFixed(2)}, distToEdge);
                 sparkle *= shardMask;
+
+                // Radial glow from the shard's own CENTRE (round 17) — a lit
+                // shard is brightest in the middle, fading toward its edges,
+                // like a small soft highlight, instead of a flat-coloured
+                // rectangle. This is the main lever for "looks like paint"
+                // vs. "looks like a glint" — a uniform-brightness tile reads
+                // as flat colour no matter how bright it is; a bright centre
+                // fading outward reads as light. GLITTER_SHARD_GLOW_FLOOR
+                // keeps edges dimmed rather than fully black, so the seam
+                // above still reads as a grid line, not a hard cutoff.
+                float distFromShardCenter = length(shardFrac - 0.5);
+                float shardGlow = 1.0 - smoothstep(0.0, 0.5, distFromShardCenter);
+                sparkle *= mix(${GLITTER_SHARD_GLOW_FLOOR.toFixed(2)}, 1.0, shardGlow);
 
                 vec3 sunDir = normalize(sunPos - worldPos);
                 float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, sunDir));

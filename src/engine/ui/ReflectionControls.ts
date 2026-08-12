@@ -13,6 +13,11 @@ export interface ReflectionSettings {
     sunIntensity: number;
     sunHeight: number;
     glitterReach: number;
+    /** Multiplier on the auto sun-height-driven width curve (round 17, 12 Aug
+     *  2026) — NOT an absolute world-unit width any more. 1.0 = the curve as
+     *  designed; see GLITTER_WIDTH_AUTO_MIN/MAX/CURVE_POWER in
+     *  TerrainMaterial.ts. Field name kept as glitterWidth for settings-file
+     *  backward compatibility, meaning changed. */
     glitterWidth: number;
 }
 
@@ -22,12 +27,11 @@ export class ReflectionControls {
     private onGlitterUpdate: (reach: number, width: number) => void;
     private onDebugGlitterToggle: (show: boolean) => void;
     private currentParams: Vector4;
-    // Defaults match GLITTER_ALONG_FAR/GLITTER_WIDTH_FAR's initial uniform
-    // values in TerrainMaterial.ts — see that file for why these two
-    // specifically are live-adjustable (getting the wedge's reach/width
-    // right depends on the player's actual camera distance).
+    // Reach default matches GLITTER_ALONG_FAR's initial uniform value in
+    // TerrainMaterial.ts. Width is now a MULTIPLIER (1.0 = the auto sun-
+    // height-driven curve as designed) — see ReflectionSettings above.
     private currentGlitterReach = 2500;
-    private currentGlitterWidth = 1200;
+    private currentGlitterWidth = 1.0;
     private lightingSystem: LightingSystem;
     private dragHandle: DragHandle | null = null;
 
@@ -217,20 +221,27 @@ export class ReflectionControls {
         glitterTitle.style.marginBottom = '4px';
         this.container.appendChild(glitterTitle);
 
-        // Reach/width are world-unit distances (TerrainMaterial.ts's
-        // GLITTER_ALONG_FAR/WIDTH_FAR) — how far along the camera->sun ground
-        // axis the glitter wedge takes to reach full width, and how wide that
-        // full width is. Deliberately NOT normalized 0-1 sliders: raw world
-        // units make it obvious how these relate to the 8000-unit map.
-        this.createSlider('Glitter Reach', 500, 6000, this.currentGlitterReach, 50, (value) => {
+        // Reach is a world-unit distance (TerrainMaterial.ts's
+        // GLITTER_ALONG_FAR) — how far along the camera->sun ground axis the
+        // glitter wedge takes to reach full width. Deliberately NOT a
+        // normalized 0-1 slider: raw world units make it obvious how this
+        // relates to the 8000-unit map. Range extended 6000->12000 (12 Aug
+        // 2026, round 17) — Simon wanted to push past the old max, especially
+        // for high-sun (small, distant-feeling) scenes.
+        this.createSlider('Glitter Reach', 500, 12000, this.currentGlitterReach, 50, (value) => {
             this.currentGlitterReach = value;
             this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
         }, 'World-unit distance for the sun glitter wedge to reach full width — smaller = fills the visible screen sooner');
 
-        this.createSlider('Glitter Width', 200, 3000, this.currentGlitterWidth, 50, (value) => {
+        // Width is now a MULTIPLIER (round 17), not an absolute world-unit
+        // size — the width itself auto-scales with the sun's apparent size
+        // (see GLITTER_WIDTH_AUTO_MIN/MAX/CURVE_POWER in TerrainMaterial.ts).
+        // 1.0 = that curve as designed; use this to nudge the whole curve up
+        // or down without fighting the automatic sun-height linkage.
+        this.createSlider('Glitter Width ×', 0.2, 3.0, this.currentGlitterWidth, 0.05, (value) => {
             this.currentGlitterWidth = value;
             this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
-        }, 'World-unit full width of the sun glitter wedge at its widest (near the horizon)');
+        }, 'Multiplier on the glitter wedge\'s auto sun-height-driven width — 1.0 = the automatic curve as designed, higher/lower scales it');
 
         // Debug isolation toggle (11 Aug 2026, round 10) — after several
         // rounds where it was genuinely unclear whether the visible
@@ -298,7 +309,13 @@ export class ReflectionControls {
         // Older exports won't have these two fields — fall back to the
         // current (already-sane) defaults rather than importing `undefined`.
         this.currentGlitterReach = data.glitterReach ?? this.currentGlitterReach;
-        this.currentGlitterWidth = data.glitterWidth ?? this.currentGlitterWidth;
+        // glitterWidth's MEANING changed 12 Aug 2026 (round 17): was an
+        // absolute world-unit width (200-3000), now a 0.2-3.0 multiplier.
+        // An export from before that change would still have a value in the
+        // old range (e.g. 1200), which as a multiplier would blow the width
+        // curve out completely — clamp into the current slider's range so an
+        // old save degrades to "very wide" rather than something broken.
+        this.currentGlitterWidth = Math.min(3.0, Math.max(0.2, data.glitterWidth ?? this.currentGlitterWidth));
         this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
         this.renderAll(); // refresh sliders to match
     }

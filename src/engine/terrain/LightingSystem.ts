@@ -532,6 +532,16 @@ export class LightingSystem {
         return this.targetSunHeight;
     }
 
+    /** Smoothed sun height normalised to 0 (SUN_MIN_HEIGHT) .. 1 (SUN_MAX_HEIGHT)
+     *  — same normalisation updateSunPosition() already does internally for the
+     *  sun's size/colour curves, just exposed for other systems. Added for
+     *  TerrainMaterial.ts's glint width, which needs to auto-scale with how
+     *  big/low the sun currently is (12 Aug 2026). */
+    public getSunHeightNormalized(): number {
+        return (this.currentSunHeight - LightingParameters.SUN_MIN_HEIGHT)
+            / (LightingParameters.SUN_MAX_HEIGHT - LightingParameters.SUN_MIN_HEIGHT);
+    }
+
     public setManualMode(manual: boolean): void {
         this.manualMode = manual;
     }
