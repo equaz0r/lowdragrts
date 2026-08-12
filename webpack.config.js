@@ -13,15 +13,10 @@ module.exports = {
                 use: 'ts-loader',
                 exclude: /node_modules/,
             },
-            {
-                test: /\.(vert|frag|glsl)$/,
-                use: 'raw-loader',
-                exclude: /node_modules/,
-            },
         ],
     },
     resolve: {
-        extensions: ['.tsx', '.ts', '.js', '.vert', '.frag', '.glsl'],
+        extensions: ['.tsx', '.ts', '.js'],
     },
     devServer: {
         static: {

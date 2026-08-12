@@ -21,7 +21,7 @@ Old combat/unit code lives in history at commit `3b6eeea`. Verdict from audit: r
 - **Webpack 5** (bundler + dev server)
 - **fastnoise-lite** (procedural terrain — OpenSimplex2S + domain warp, also drives the region-mask noise channel)
 - **postprocessing** (pmndrs) — bloom + ACES tone mapping + brightness/contrast + vignette, wired in `Game.ts`
-- **dat.gui** — still an unused dependency (Phase 3 cleanup chore, not done)
+- **Vitest** — Node-based unit/determinism tests; `npm run verify` is the full gate
 
 ### Gotcha: don't switch `moduleResolution` to `"bundler"`
 Broke `three/examples/jsm/...` subpath imports (OrbitControls) without fixing the actual issue. The real fix for the `postprocessing` type-resolution problem was deleting a stale hand-written `src/types/postprocessing.d.ts` stub shadowing the real package's bundled types. Keep `"node"`.
@@ -271,6 +271,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Removed ambiguous grid configuration and dead runtime mutation APIs. World size, build-cell size/count, and height-sample spacing/count now have explicit names; counts are derived from sizes. The current renderer asserts its temporary one-height-segment-per-build-cell requirement, leaving a clear seam for denser deformable terrain later. |
 | 12 Aug 2026 | Fixed edge colour-ramp ordering: defaults now progress 8%→10% instead of 10%→8%, layer thresholds are normalized as complete model state on import/material creation, and live sliders cannot cross neighbouring thresholds. |
 | 12 Aug 2026 | Added the project verification gate: dedicated full/sim typechecks, Vitest run/watch commands, production build mode, and `npm run verify`. Initial 19-test suite covers HeightMap boundaries, grid conversions, edge-ramp invariants, deterministic RNG golden output/state resume, and numeric bounds. `package-lock.json` is now tracked for repeatable installs. |
+| 12 Aug 2026 | Removed confirmed-unused dat.gui, simplex-noise variants, Babel/HTML/raw-loader packages and stale shader/noise declarations. Webpack now resolves only formats it actually consumes; TypeScript and ts-loader are correctly build-only dev dependencies. |
 
 ---
 *Update this file at the end of every coding session.*

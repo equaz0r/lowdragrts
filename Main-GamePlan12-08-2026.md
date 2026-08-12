@@ -976,6 +976,8 @@ typecheck -> typecheck:sim -> unit/integration tests -> production build
 
 ### 14.9 Dependency/build cleanup
 
+**Status: completed on `feature/phase-2-5-stabilisation`.**
+
 After confirming no usage, remove:
 
 - `dat.gui`
