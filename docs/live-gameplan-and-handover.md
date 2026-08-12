@@ -1,5 +1,7 @@
 # Live Gameplan and Handover (v1.3 - 2024-03-28)
 
+> **HISTORICAL / SUPERSEDED.** Claims here about a completed state machine, LOD work, and `npm run dev` do not describe the current project. Use `../Main-GamePlan12-08-2026.md`, `../CLAUDE.md`, and `npm start`.
+
 ## Current Status
 - Terrain system is implemented with height-based generation and reflections
 - Grid system is functional with panel-based visualization
@@ -245,4 +247,4 @@ All game parameters are now centralized in `GameParameters.ts`, organized into c
 - Review color transition parameters
 - Test sun scaling at different heights
 - Verify reflection behavior
-- Document any parameter adjustments 
+- Document any parameter adjustments

@@ -1,5 +1,7 @@
 # Visual Parameters Documentation
 
+> **HISTORICAL / SUPERSEDED.** Many values and file paths below predate the current terrain, shader, sun and control systems. Use the live control panels and current config files under `src/engine/config/`; see `../CLAUDE.md` for current tuning notes.
+
 This document details all adjustable visual parameters in the game engine, their effects, and locations.
 
 ## Camera Settings
@@ -254,4 +256,4 @@ Location: `src/engine/terrain/TerrainGenerator.ts`
 - Distance units are consistent across the engine
 - Intensity values typically range from 0.0 to 1.0
 - Scale values affect the frequency of features (lower = larger features)
-- All parameters can be adjusted at runtime through the respective class instances 
+- All parameters can be adjusted at runtime through the respective class instances

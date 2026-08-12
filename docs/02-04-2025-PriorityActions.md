@@ -1,5 +1,7 @@
 # Priority Actions - April 2, 2025
 
+> **HISTORICAL SNAPSHOT — DO NOT USE AS THE CURRENT BACKLOG.** This records the project on 2 April 2025. Use `../Main-GamePlan12-08-2026.md` for current priorities and `../CLAUDE.md` for current implementation state.
+
 ## Current Status ✅
 - Successfully reset to last stable commit
 - Clean build verified
@@ -84,4 +86,4 @@ For each component modified:
 - Note any potential future optimizations
 - Mark any security concerns for immediate attention
 - Monitor for any reflection or lighting artifacts
-- Consider implementing weather effects system 
+- Consider implementing weather effects system

@@ -1,5 +1,7 @@
 # Engine Architecture
 
+> **HISTORICAL / SUPERSEDED.** This describes planned or removed systems such as dynamic LOD and SimplexNoise. Use `../Main-GamePlan12-08-2026.md` for the authoritative architecture and `../CLAUDE.md` for the actual current source layout.
+
 ## Overview
 The engine is built using Three.js as its core rendering framework, with a custom architecture designed for real-time strategy games. The system is modular and component-based, allowing for easy extension and modification.
 
@@ -80,4 +82,4 @@ The engine is built using Three.js as its core rendering framework, with a custo
 - Improved performance optimizations
 - Enhanced shader effects
 - Better memory management
-- Multi-threading support 
+- Multi-threading support

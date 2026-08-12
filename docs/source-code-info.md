@@ -1,5 +1,7 @@
 # Source Code Documentation
 
+> **HISTORICAL / SUPERSEDED.** This references removed paths and a React UI that the project does not use. Use `../CLAUDE.md` for the current annotated source tree and `../Main-GamePlan12-08-2026.md` for intended architecture.
+
 This document provides an overview of the project's source code structure and the purpose of each component.
 
 ## Project Structure
@@ -102,4 +104,4 @@ All game parameters are centralized in `GameParameters.ts`, organized into categ
 4. **Documentation**
    - Keep this document updated with new features
    - Document complex algorithms and calculations
-   - Include parameter descriptions and units 
+   - Include parameter descriptions and units

@@ -996,6 +996,8 @@ Make `npm run build` a real production build. Keep development source maps/serve
 
 ### 14.10 Documentation cleanup
 
+**Status: completed on `feature/phase-2-5-stabilisation`. Historical files are retained but clearly bannered; current sources of truth are indexed in `docs/README.md`.**
+
 Move clearly obsolete files in `docs/` into `archive/` or add a large historical warning. In particular, current docs incorrectly mention systems such as React UI, a completed state machine, dynamic LOD and `npm run dev`.
 
 Copy this plan into the repository permanently—this file fulfils that requirement. The external plan should no longer be the only detailed source.

@@ -8,10 +8,10 @@ Procedurally generated terrain with a synthwave visual style — neon height-ram
 
 **Phase 2 (terrain) is essentially complete.** Procedural heightmap terrain, a unified visual/build grid, plateau build-sites, region-masked flatland/mountain zoning, rotatable valley carving, and a full synthwave visual pass (bloom, dynamic lighting, terrain reflections) are all in and working.
 
-**No units, combat, projectiles, or resources yet.** A full game-simulation architecture (multiplayer-first, deterministic fixed-tick sim, SoA unit data for 300+ unit scale) is planned for Phase 3 onward — see `CLAUDE.md` in this repo for the detailed phase plan and full development log.
+**No units, combat, projectiles, or resources yet.** A full game-simulation architecture (multiplayer-first, deterministic fixed-tick sim, SoA unit data for 300+ unit scale) is planned for Phase 3 onward — see `Main-GamePlan12-08-2026.md` for the authoritative plan and `CLAUDE.md` for current implementation notes.
 
 ### Known issues
-- 🔴 **Sun reflection glint doesn't correctly appear when the sun is behind the camera.** Standing with your back to the sun, terrain ahead that the sun is lighting should still be able to show a glint (that's how specular reflection works — the surface just needs to be tilted right, regardless of which way you're facing). A fix was attempted and passed automated shape checks, but didn't resolve the issue in-browser. Actively being worked on — see `CLAUDE.md`'s "Known Issues" section for the current diagnosis.
+- 🟡 A small amount of sun-glint bleed remains at some panel edges. The major forward/back-glint issue is fixed and live-tested; this remaining visual polish is not blocking gameplay work.
 
 ## Requirements
 - Node.js and npm (any reasonably recent LTS version)
@@ -40,13 +40,13 @@ npm run build
 
 Produces a production bundle at `public/bundle.js`.
 
-## Typechecking
+## Verification
 
 ```bash
-npx tsc --noEmit -p tsconfig.json
+npm run verify
 ```
 
-No automated test suite or linter yet — planned as part of Phase 3 (see `CLAUDE.md`).
+This runs the full TypeScript check, isolated simulation check, 19 automated tests, and a production build. Use `npm test` for tests only or `npm run test:watch` while coding.
 
 ## Controls (current build)
 
@@ -64,7 +64,7 @@ No automated test suite or linter yet — planned as part of Phase 3 (see `CLAUD
 
 ## Project structure
 
-See `CLAUDE.md` for the full annotated source tree, architecture rules, and phase-by-phase plan. Short version:
+See `Main-GamePlan12-08-2026.md` for architecture and phases, and `CLAUDE.md` for the annotated source tree and current-session rules. Short version:
 
 ```
 src/
@@ -80,7 +80,7 @@ src/
 
 ## Development notes
 
-This repo carries a `CLAUDE.md` file used as a running development log and context doc for AI-assisted coding sessions (Claude Code) — it documents architecture decisions, known gotchas, active tuning constants, and a full session-by-session history. Worth a read if you're picking this project back up after a break, or contributing.
+This repo carries `Main-GamePlan12-08-2026.md` as the authoritative roadmap and `CLAUDE.md` as the current implementation log/context for AI-assisted coding sessions. Files under `docs/` with historical banners are reference material only.
 
 ## License
 

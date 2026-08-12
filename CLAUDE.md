@@ -8,7 +8,7 @@ A heightmap-based real-time strategy game inspired by Total Annihilation. TypeSc
 
 Phase 2 (terrain) is essentially done — procedural terrain, unified visual/build grid, plateaus, region-masked flatland/mountain zoning, full synthwave visual pass (bloom, lighting, reflections). No units, combat, projectiles, or resources yet.
 
-A full game-simulation architecture plan exists for Phases 3+ (units, movement, combat, multiplayer, economy, AI) — locked decisions: multiplayer is a hard goal (fixed-tick sim, deterministic RNG, command-based input from day 1), design for 300+ units (SoA data, InstancedMesh rendering). See `## Phase Plan` below for the condensed version — an external Claude Code plan file has the full detail but isn't checked into git; re-derive/re-save into this doc if it's ever gone.
+A full game-simulation architecture plan exists for Phases 3+ (units, movement, combat, multiplayer, economy, AI) — locked decisions: multiplayer is a hard goal (fixed-tick sim, deterministic RNG, command-based input from day 1), design for 300+ units (SoA data, InstancedMesh rendering). `Main-GamePlan12-08-2026.md` is the checked-in authoritative plan; `## Phase Plan` below is its condensed working summary.
 
 Old combat/unit code lives in history at commit `3b6eeea`. Verdict from audit: rewrite-guide, not port — its `Unit extends THREE.Object3D` design fuses sim and render and blocks instancing at scale.
 
@@ -272,6 +272,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Fixed edge colour-ramp ordering: defaults now progress 8%→10% instead of 10%→8%, layer thresholds are normalized as complete model state on import/material creation, and live sliders cannot cross neighbouring thresholds. |
 | 12 Aug 2026 | Added the project verification gate: dedicated full/sim typechecks, Vitest run/watch commands, production build mode, and `npm run verify`. Initial 19-test suite covers HeightMap boundaries, grid conversions, edge-ramp invariants, deterministic RNG golden output/state resume, and numeric bounds. `package-lock.json` is now tracked for repeatable installs. |
 | 12 Aug 2026 | Removed confirmed-unused dat.gui, simplex-noise variants, Babel/HTML/raw-loader packages and stale shader/noise declarations. Webpack now resolves only formats it actually consumes; TypeScript and ts-loader are correctly build-only dev dependencies. |
+| 12 Aug 2026 | Cleaned documentation authority: README now reflects the resolved glint and real verification commands, `Main-GamePlan12-08-2026.md` is explicitly authoritative, and every stale file under `docs/` has a historical warning plus a current-doc index. |
 
 ---
 *Update this file at the end of every coding session.*
