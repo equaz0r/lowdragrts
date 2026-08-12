@@ -8,6 +8,12 @@ import {
     normalizeSceneSettings,
     SceneSettings,
 } from '../config/SceneSettings';
+import {
+    decodeLightingCode,
+    decodeSceneCode,
+    encodeLightingCode,
+    encodeSceneCode,
+} from '../config/ShareCodes';
 
 /**
  * Save/load the whole tunable scene (terrain shape + seed, grid colours/
@@ -26,6 +32,8 @@ export class SettingsIO {
     private edgeControls: EdgeControls;
     private reflectionControls: ReflectionControls;
     private dragHandle: DragHandle | null = null;
+    private terrainSeedInput!: HTMLInputElement;
+    private readonly regenerateListener = () => this.refreshTerrainSeed();
 
     constructor(
         terrainGenerator: TerrainGenerator,
@@ -54,7 +62,7 @@ export class SettingsIO {
         });
 
         const title = document.createElement('div');
-        title.textContent = 'Save / Load Settings';
+        title.textContent = 'Share / Save Settings';
         Object.assign(title.style, {
             fontWeight:    'bold',
             marginBottom:  '4px',
@@ -64,12 +72,26 @@ export class SettingsIO {
         this.container.appendChild(title);
         this.dragHandle = makeDraggable(this.container, title, 'settings-io');
 
+        this.createShareControls();
+
+        const jsonLabel = document.createElement('div');
+        jsonLabel.textContent = 'Readable JSON (full scene)';
+        Object.assign(jsonLabel.style, {
+            marginTop: '7px',
+            marginBottom: '3px',
+            paddingTop: '5px',
+            borderTop: '1px solid rgba(255,255,255,0.2)',
+            fontSize: '10px',
+            fontWeight: 'bold',
+        });
+        this.container.appendChild(jsonLabel);
+
         const btnRow = document.createElement('div');
         btnRow.style.display = 'flex';
         btnRow.style.gap = '4px';
         btnRow.style.marginBottom = '4px';
-        btnRow.appendChild(this.makeButton('Export', () => this.exportToTextarea()));
-        btnRow.appendChild(this.makeButton('Import', () => this.importFromTextarea()));
+        btnRow.appendChild(this.makeButton('Export JSON', () => this.exportToTextarea()));
+        btnRow.appendChild(this.makeButton('Import JSON', () => this.importFromTextarea()));
         this.container.appendChild(btnRow);
 
         this.textarea = document.createElement('textarea');
@@ -111,6 +133,8 @@ export class SettingsIO {
         resetRow.appendChild(resetBtn);
         this.container.appendChild(resetRow);
 
+        this.terrainGenerator.addRegenerateListener(this.regenerateListener);
+        this.refreshTerrainSeed();
         document.body.appendChild(this.container);
     }
 
@@ -134,14 +158,161 @@ export class SettingsIO {
         return btn;
     }
 
-    private exportToTextarea(): void {
-        const settings: SceneSettings = {
+    private createShareControls(): void {
+        const note = document.createElement('div');
+        note.textContent = 'Seed = terrain RNG only. Codes restore settings.';
+        Object.assign(note.style, { fontSize: '9px', opacity: '0.65', marginBottom: '4px' });
+        this.container.appendChild(note);
+
+        this.terrainSeedInput = this.makeShareRow(
+            'Terrain Seed (current terrain sliders)',
+            '0–4294967295',
+            () => String(this.terrainGenerator.getSeed()),
+            value => this.loadTerrainSeed(value),
+        );
+        this.makeShareRow(
+            'Lighting Code (sun + reflections)',
+            'LDR-L1-…',
+            () => encodeLightingCode(this.reflectionControls.exportSettings()),
+            value => this.loadLightingCode(value),
+        );
+        this.makeShareRow(
+            'Full Scene Code (terrain + grid + lighting)',
+            'LDR-S1-…',
+            () => encodeSceneCode(this.captureSceneSettings()),
+            value => this.loadSceneCode(value),
+        );
+    }
+
+    private makeShareRow(
+        label: string,
+        placeholder: string,
+        valueForCopy: () => string,
+        onLoad: (value: string) => void,
+    ): HTMLInputElement {
+        const wrapper = document.createElement('div');
+        wrapper.style.marginBottom = '5px';
+
+        const labelElement = document.createElement('div');
+        labelElement.textContent = label;
+        Object.assign(labelElement.style, { fontSize: '10px', marginBottom: '2px' });
+        wrapper.appendChild(labelElement);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = placeholder;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        Object.assign(input.style, {
+            width: '100%',
+            boxSizing: 'border-box',
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            color: '#ddd',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: '3px',
+            padding: '3px',
+            marginBottom: '2px',
+        });
+        wrapper.appendChild(input);
+
+        const buttons = document.createElement('div');
+        buttons.style.display = 'flex';
+        buttons.style.gap = '4px';
+        buttons.appendChild(this.makeButton('Copy', () => {
+            this.showAndCopy(input, valueForCopy());
+        }));
+        buttons.appendChild(this.makeButton('Load', () => onLoad(input.value)));
+        wrapper.appendChild(buttons);
+        this.container.appendChild(wrapper);
+        return input;
+    }
+
+    private captureSceneSettings(): SceneSettings {
+        return {
             version: CURRENT_SCENE_SETTINGS_VERSION,
             seed: this.terrainGenerator.getSeed(),
             terrain: this.terrainControls.exportSettings(),
             edge: this.edgeControls.exportSettings(),
             reflection: this.reflectionControls.exportSettings(),
         };
+    }
+
+    private showAndCopy(input: HTMLInputElement, value: string): void {
+        input.value = value;
+        input.focus();
+        input.select();
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(value).then(
+                () => { this.status.textContent = 'Copied'; },
+                () => { this.status.textContent = 'Selected — press Ctrl+C'; },
+            );
+        } else {
+            this.status.textContent = 'Selected — press Ctrl+C';
+        }
+    }
+
+    private refreshTerrainSeed(): void {
+        if (this.terrainSeedInput) {
+            this.terrainSeedInput.value = String(this.terrainGenerator.getSeed());
+        }
+    }
+
+    private loadTerrainSeed(value: string): void {
+        const trimmed = value.trim();
+        if (!/^\d{1,10}$/.test(trimmed)) {
+            this.status.textContent = 'Terrain Seed must be 0–4294967295';
+            return;
+        }
+        const seed = Number(trimmed);
+        if (!Number.isSafeInteger(seed) || seed > 4294967295) {
+            this.status.textContent = 'Terrain Seed must be 0–4294967295';
+            return;
+        }
+        if (this.terrainControls.regenerateWithSeed(seed)) {
+            this.refreshTerrainSeed();
+            this.status.textContent = 'Terrain seed loaded (current sliders retained)';
+        } else {
+            this.status.textContent = 'Wait for the current terrain generation to finish';
+        }
+    }
+
+    private loadLightingCode(value: string): void {
+        try {
+            const normalized = normalizeSceneSettings(
+                decodeLightingCode(value),
+                this.captureSceneSettings(),
+            );
+            this.reflectionControls.importSettings(normalized.reflection);
+            this.status.textContent = 'Lighting code loaded';
+        } catch (error) {
+            this.status.textContent = 'Lighting code failed: '
+                + (error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    private loadSceneCode(value: string): void {
+        try {
+            this.applySceneSettings(decodeSceneCode(value));
+            this.status.textContent = 'Full scene code loaded';
+        } catch (error) {
+            this.status.textContent = 'Scene code failed: '
+                + (error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    private applySceneSettings(rawData: unknown): void {
+        const data = normalizeSceneSettings(rawData, this.captureSceneSettings());
+        this.terrainGenerator.setSeed(data.seed);
+        this.edgeControls.importSettings(data.edge);
+        this.reflectionControls.importSettings(data.reflection);
+        this.terrainControls.importSettings(data.terrain);
+        this.refreshTerrainSeed();
+    }
+
+    private exportToTextarea(): void {
+        const settings = this.captureSceneSettings();
         const json = JSON.stringify(settings, null, 2);
         this.textarea.value = json;
         this.textarea.focus();
@@ -170,21 +341,7 @@ export class SettingsIO {
             return;
         }
         try {
-            const fallback: SceneSettings = {
-                version: CURRENT_SCENE_SETTINGS_VERSION,
-                seed: this.terrainGenerator.getSeed(),
-                terrain: this.terrainControls.exportSettings(),
-                edge: this.edgeControls.exportSettings(),
-                reflection: this.reflectionControls.exportSettings(),
-            };
-            const data = normalizeSceneSettings(rawData, fallback);
-            // Seed first: TerrainControls.importSettings() regenerates with
-            // whatever seed is CURRENTLY set, keeping it unchanged — so this
-            // has to land before that call, not after.
-            this.terrainGenerator.setSeed(data.seed);
-            this.edgeControls.importSettings(data.edge);
-            this.reflectionControls.importSettings(data.reflection);
-            this.terrainControls.importSettings(data.terrain); // triggers the regenerate — do this last
+            this.applySceneSettings(rawData);
             this.status.textContent = 'Loaded';
         } catch (e) {
             this.status.textContent = 'Import failed: ' + (e instanceof Error ? e.message : String(e));
@@ -192,6 +349,7 @@ export class SettingsIO {
     }
 
     public dispose(): void {
+        this.terrainGenerator.removeRegenerateListener(this.regenerateListener);
         this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);

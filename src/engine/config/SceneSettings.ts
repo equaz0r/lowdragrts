@@ -60,7 +60,7 @@ export function normalizeSceneSettings(input: unknown, fallback: SceneSettings):
 
     return {
         version: CURRENT_SCENE_SETTINGS_VERSION,
-        seed: integerIn(root.seed, fallback.seed, -2147483648, 2147483647),
+        seed: integerIn(root.seed, fallback.seed, 0, 4294967295),
         terrain: {
             heightScale: numberIn(terrain.heightScale, fallback.terrain.heightScale, 200, 3000),
             persistence: numberIn(terrain.persistence, fallback.terrain.persistence, 0.2, 0.8),

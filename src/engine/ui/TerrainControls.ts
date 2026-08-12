@@ -451,6 +451,14 @@ export class TerrainControls {
         this.triggerRegenerate(false);
     }
 
+    /** Apply an exact shared terrain seed while retaining the current terrain sliders. */
+    public regenerateWithSeed(seed: number): boolean {
+        if (this.regenerating) return false;
+        this.terrainGenerator.setSeed(seed);
+        this.triggerRegenerate(false);
+        return true;
+    }
+
     public dispose(): void {
         if (this.debounceTimer !== null) {
             clearTimeout(this.debounceTimer);

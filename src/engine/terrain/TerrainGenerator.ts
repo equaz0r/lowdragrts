@@ -107,7 +107,7 @@ export const TerrainPresets: Record<string, TerrainConfig> = {
  * chosen seed — noise sampling, plateau site selection — is deterministic.
  */
 function newRandomSeed(): number {
-    return Math.random() * 2147483647 | 0;
+    return Math.floor(Math.random() * 4294967296) >>> 0;
 }
 
 export class TerrainGenerator {
@@ -549,12 +549,12 @@ export class TerrainGenerator {
 
     /** Current terrain seed — same seed + same config always reproduces the same map. */
     public getSeed(): number {
-        return this.seed;
+        return this.seed >>> 0;
     }
 
     /** Pins the terrain to a specific seed. Takes effect on the next generate()/regenerate(). */
     public setSeed(seed: number): void {
-        this.seed = seed | 0;
+        this.seed = seed >>> 0;
     }
 
     /**

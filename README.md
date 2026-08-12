@@ -46,13 +46,14 @@ Produces a production bundle at `public/bundle.js`.
 npm run verify
 ```
 
-This runs the full TypeScript check, isolated simulation check, 19 automated tests, and a production build. Use `npm test` for tests only or `npm run test:watch` while coding.
+This runs the full TypeScript check, isolated simulation check, automated tests, and a production build. Use `npm test` for tests only or `npm run test:watch` while coding.
 
 ## Controls (current build)
 
 - **Orbit / pan / zoom** — mouse drag / right-drag / scroll (Three.js `OrbitControls`)
 - Several draggable debug panels are shown by default (Terrain Shape, Grid Appearance, Terrain Controls, Save/Load Settings, Performance Monitor) — these are the current dev-facing controls for tuning terrain generation, lighting, and reflections live. Panel positions persist across reloads; a "Reset Panel Positions" button is in the Save/Load Settings panel.
 - Save/Load Settings panel exports the whole tunable scene (terrain shape, seed, grid colours, reflection/sun params) as JSON, and can re-import it.
+- The same panel shows the current 32-bit Terrain Seed and provides versioned Lighting Codes (`LDR-L1-…`) and Full Scene Codes (`LDR-S1-…`) for easy sharing. A terrain seed uses the recipient's current terrain sliders; a Full Scene Code reproduces all sliders as well.
 
 ## Tech stack
 

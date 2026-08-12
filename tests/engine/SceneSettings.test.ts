@@ -99,4 +99,11 @@ describe('normalizeSceneSettings', () => {
         expect(() => normalizeSceneSettings({ version: 2 }, fallback))
             .toThrow('newer than this build supports');
     });
+
+    it('supports the full unsigned 32-bit terrain-seed range', () => {
+        expect(normalizeSceneSettings({ seed: 4294967295 }, fallback).seed)
+            .toBe(4294967295);
+        expect(normalizeSceneSettings({ seed: 4294967296 }, fallback).seed)
+            .toBe(4294967295);
+    });
 });

@@ -127,6 +127,7 @@ tools/
 - ✅ OrbitControls camera, TerrainControls, EdgeControls, ReflectionControls
 - ✅ Save/load settings (`SettingsIO.ts`) — full scene as JSON, including seed
 - Settings JSON is versioned through `SceneSettings.ts`. Imports are untrusted input: future versions are rejected; legacy/partial exports inherit live fallbacks; all numbers, booleans and colours are validated/clamped before any scene state changes.
+- Sharing UI distinguishes the true unsigned 32-bit **Terrain Seed** (0–4,294,967,295; terrain RNG only, current terrain sliders retained) from reversible **Lighting Codes** (`LDR-L1-…`) and **Full Scene Codes** (`LDR-S1-…`). Share codes are versioned base64url JSON in `ShareCodes.ts`, not hashes: they contain enough data to restore the settings. Full Scene includes terrain seed/config, grid appearance and lighting.
 - ✅ Draggable panels (`Draggable.ts`) — position persists in `localStorage`; "Reset Panel Positions" button
 - ✅ "Sea" shimmer (`TerrainMaterial.ts`) — low/flat ground gets a cheap time-varying normal perturbation for reflection only, so glints dance like light on water without real geometry motion. Gate is `height / heightScale`, matching the vertex-colour gradient's own normalisation.
 - ✅ Sun glitter path — explicitly authored wedge envelope along the real camera→sun ground axis (`calculateSunGlitter()`, `TerrainMaterial.ts`), textured with grid-aligned shard sparkle, shape-verified via `tools/simulate-sun-glitter.js` rather than eyeballed. See Active Tuning Notes below for the constants/gotchas.
@@ -275,6 +276,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Removed confirmed-unused dat.gui, simplex-noise variants, Babel/HTML/raw-loader packages and stale shader/noise declarations. Webpack now resolves only formats it actually consumes; TypeScript and ts-loader are correctly build-only dev dependencies. |
 | 12 Aug 2026 | Cleaned documentation authority: README now reflects the resolved glint and real verification commands, `Main-GamePlan12-08-2026.md` is explicitly authoritative, and every stale file under `docs/` has a historical warning plus a current-doc index. |
 | 12 Aug 2026 | Completed scene-settings hardening: moved the versioned schema/normalizer into a pure config module, added safe legacy-partial migration, rejects unsupported future versions, validates colours/booleans and clamps every numeric field to its real UI range before applying anything. Added focused tests. |
+| 12 Aug 2026 | Added clearly labelled sharing controls: visible/loadable 10-digit-max Terrain Seed, Lighting Code and Full Scene Code alongside the existing readable JSON. Codes have self-identifying version prefixes and reversible payloads; seed display follows regeneration/import. |
 
 ---
 *Update this file at the end of every coding session.*

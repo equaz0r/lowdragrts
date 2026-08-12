@@ -1004,6 +1004,15 @@ Move clearly obsolete files in `docs/` into `archive/` or add a large historical
 
 Copy this plan into the repository permanently—this file fulfils that requirement. The external plan should no longer be the only detailed source.
 
+### 14.11 Player-facing terrain and scene sharing
+
+**Status: completed on `feature/phase-2-5-stabilisation`.**
+
+- Terrain Seed is a visible unsigned 32-bit number (maximum 10 decimal digits). It controls terrain RNG and deliberately retains the current terrain-generation sliders.
+- Lighting Code uses the `LDR-L1-` prefix and contains the sun/reflection settings required to restore that look.
+- Full Scene Code uses the `LDR-S1-` prefix and contains terrain seed/config, grid appearance and lighting.
+- Codes are reversible versioned payloads rather than hashes; readable full-scene JSON remains available as the durable debugging/export format.
+
 ---
 
 ## 15. Phase Plan
