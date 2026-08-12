@@ -1,6 +1,10 @@
 import { Color } from 'three';
 import { TerrainGenerator } from '../terrain/TerrainGenerator';
-import { EdgeParameters } from '../config/TerrainConfig';
+import {
+    EDGE_LAYER_MIN_GAP,
+    EdgeParameters,
+    normalizeEdgeLayerHeights,
+} from '../config/TerrainConfig';
 import { makeDraggable, DragHandle } from './Draggable';
 
 /** JSON-safe snapshot of EdgeParameters — see SettingsIO.ts. */
@@ -90,7 +94,7 @@ export class EdgeControls {
         label: string,
         min: number, max: number, step: number, value: number,
         fmt: (v: number) => string,
-        onChange: (v: number) => void,
+        onChange: (v: number) => number | void,
         tooltip?: string,
     ): void {
         const row = document.createElement('div');
@@ -130,8 +134,9 @@ export class EdgeControls {
 
         slider.addEventListener('input', () => {
             const v = parseFloat(slider.value);
-            val.textContent = fmt(v);
-            onChange(v);
+            const applied = onChange(v) ?? v;
+            slider.value = String(applied);
+            val.textContent = fmt(applied);
         });
 
         sliderRow.appendChild(slider);
@@ -201,9 +206,14 @@ export class EdgeControls {
                 'Height %', 0, 100, 1, Math.round(layer.heightFraction * 100),
                 v => v.toFixed(0) + '%',
                 v => {
-                    layer.heightFraction = v / 100;
+                    const previous = EdgeParameters.layers[idx - 1];
+                    const next = EdgeParameters.layers[idx + 1];
+                    const min = previous ? previous.heightFraction + EDGE_LAYER_MIN_GAP : 0;
+                    const max = next ? next.heightFraction - EDGE_LAYER_MIN_GAP : 1;
+                    layer.heightFraction = Math.min(max, Math.max(min, v / 100));
                     const u = this.getUniforms();
                     if (u) (u.layerHeights.value as Float32Array)[idx] = layer.heightFraction;
+                    return layer.heightFraction * 100;
                 },
                 'Normalised terrain height where this layer begins',
             );
@@ -285,6 +295,7 @@ export class EdgeControls {
             target.color.set(l.color);
             target.intensity = l.intensity;
         });
+        normalizeEdgeLayerHeights(EdgeParameters.layers);
         EdgeParameters.pulseSpeed = data.pulseSpeed;
         EdgeParameters.pulseIntensity = data.pulseIntensity;
         EdgeParameters.pulseWidth = data.pulseWidth;

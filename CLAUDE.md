@@ -169,6 +169,7 @@ PerformanceMonitor's `Geometries` and `Textures` values are Three.js resource co
 ### Edge Grid
 - Colour ramp: navy→indigo→purple→pink→orange (low→high), no cyan. Pulse: purple at low heights → orange at peaks.
 - All live-tunable in EdgeControls — the above are starting defaults only.
+- Edge layer height thresholds must stay strictly ascending with at least a 1% gap. Defaults are ordered; sliders clamp against neighbouring layers; imported settings and material creation normalize invalid values before uniforms are written.
 
 ### Terrain noise
 - `baseFrequency` 0.0004 = large rolling hills. `peakFrequency` 0.0008 = ridge scale. `warpAmplitude` 350 = strong twist. `peakThreshold` 0.40. `persistence` — lower = smooth rounded, higher = rough/jagged.
@@ -264,6 +265,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Hardened regeneration/HMR cleanup: terrain child grid geometry/material now dispose on every regeneration, surface buffers retain their separate BufferPool release path, `TerrainGenerator` handles async initialise/regenerate disposal races, and `Game.dispose()` is idempotent and disposes OrbitControls safely. |
 | 12 Aug 2026 | Corrected the performance overlay: Three.js `renderer.info.memory` geometry/texture values are now labelled as resource counts instead of being multiplied by 1 KiB and presented as invented GPU-memory megabytes. |
 | 12 Aug 2026 | Removed ambiguous grid configuration and dead runtime mutation APIs. World size, build-cell size/count, and height-sample spacing/count now have explicit names; counts are derived from sizes. The current renderer asserts its temporary one-height-segment-per-build-cell requirement, leaving a clear seam for denser deformable terrain later. |
+| 12 Aug 2026 | Fixed edge colour-ramp ordering: defaults now progress 8%→10% instead of 10%→8%, layer thresholds are normalized as complete model state on import/material creation, and live sliders cannot cross neighbouring thresholds. |
 
 ---
 *Update this file at the end of every coding session.*

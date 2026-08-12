@@ -934,11 +934,15 @@ GPU-memory estimation can be added later if it is calculated from known buffer/t
 
 ### 14.6 Simplify grid configuration
 
+**Status: completed on `feature/phase-2-5-stabilisation` (`a5408f1`).**
+
 Current defaults say `DIVISIONS = 100`, while `8000 / 64 = 125` and terrain generation actually uses 125 cells. Some setters change values the renderer ignores.
 
 Replace this ambiguity with the explicit terminology in Section 8. Remove or fully wire unused setters.
 
 ### 14.7 Validate edge colour layers
+
+**Status: completed on `feature/phase-2-5-stabilisation`. Ascending model thresholds are enforced; colour/intensity records are never reordered.**
 
 The default height fractions are not monotonic (`0.10`, then `0.08`), while the shader assumes a low-to-high ramp. The current `sortedHeights` calculation does not truly sort or enforce increasing values.
 
@@ -1387,4 +1391,3 @@ LowDrag RTS should proceed as:
 The terrain prototype is worth keeping. The gameplay layer should be new. Terrain destruction should be designed into the authoritative heightfield before combat and pathfinding become deeply established.
 
 The next coding task is **Phase 2.5, item 14.1: fix the terrain shader's coordinate-space mismatch and verify the live glint before changing any tuning constants**.
-

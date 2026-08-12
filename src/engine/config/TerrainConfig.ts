@@ -73,6 +73,25 @@ export interface EdgeColorLayer {
     intensity: number;
 }
 
+export const EDGE_LAYER_MIN_GAP = 0.01;
+
+/** Keep shader ramp thresholds finite, bounded, and strictly low-to-high. */
+export function normalizeEdgeLayerHeights(layers: EdgeColorLayer[]): void {
+    const lastIndex = layers.length - 1;
+    let previous = -EDGE_LAYER_MIN_GAP;
+
+    layers.forEach((layer, index) => {
+        const fallback = lastIndex > 0 ? index / lastIndex : 0;
+        const requested = Number.isFinite(layer.heightFraction)
+            ? layer.heightFraction
+            : fallback;
+        const min = Math.max(index * EDGE_LAYER_MIN_GAP, previous + EDGE_LAYER_MIN_GAP);
+        const max = 1 - (lastIndex - index) * EDGE_LAYER_MIN_GAP;
+        layer.heightFraction = Math.min(max, Math.max(min, requested));
+        previous = layer.heightFraction;
+    });
+}
+
 /**
  * Live edge appearance config — mutated directly by EdgeControls.
  * NOT as const so controls can modify values at runtime.
@@ -84,15 +103,13 @@ export interface EdgeColorLayer {
  */
 // Height%/intensity below are Simon's hand-tuned scene (11 Aug 2026), read off
 // a screenshot. Colours kept as the prior defaults — a colour-picker swatch in
-// a screenshot isn't reliably readable back to an exact hex value, and the
-// swatches shown were the same hue family as these already, so not worth
-// guessing precise hex over. Layer 1's height (10%) now sits ABOVE layer 2's
-// (8%) — non-monotonic, presumably from live-dragging rather than deliberate
-// — kept as shown, not "fixed".
+// a screenshot isn't reliably readable back to an exact hex value. The first
+// two thresholds are ordered 8% then 10%; reversed thresholds make smoothstep
+// transitions overlap and produce misleading colour bands.
 export const EdgeParameters = {
     layers: [
-        { heightFraction: 0.10, color: new Color(0x0a0518), intensity: 1.80 },
-        { heightFraction: 0.08, color: new Color(0x2a0f70), intensity: 2.90 },
+        { heightFraction: 0.08, color: new Color(0x0a0518), intensity: 1.80 },
+        { heightFraction: 0.10, color: new Color(0x2a0f70), intensity: 2.90 },
         { heightFraction: 0.50, color: new Color(0x7a12c8), intensity: 3.10 },
         { heightFraction: 0.62, color: new Color(0xff1f95), intensity: 3.30 },
         { heightFraction: 0.89, color: new Color(0xff7a00), intensity: 5.00 },

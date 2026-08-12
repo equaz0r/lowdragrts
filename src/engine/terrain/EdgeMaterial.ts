@@ -2,7 +2,7 @@ import {
     LineBasicMaterial,
     AdditiveBlending,
 } from 'three';
-import { EdgeParameters } from '../config/TerrainConfig';
+import { EdgeParameters, normalizeEdgeLayerHeights } from '../config/TerrainConfig';
 
 export interface EdgeUniforms {
     [key: string]: { value: any };
@@ -24,11 +24,11 @@ export interface EdgeMaterialResult {
 export function createEdgeMaterial(minHeight: number, maxHeight: number): EdgeMaterialResult {
     const layers = EdgeParameters.layers;
 
-    // Ensure layer heights are strictly ascending (prevents smoothstep divide-by-zero)
-    const sortedHeights = layers.map((l, i) => Math.max(l.heightFraction, i * 0.001));
+    // Smoothstep thresholds must be strictly ascending.
+    normalizeEdgeLayerHeights(layers);
 
     const uniforms: EdgeUniforms = {
-        layerHeights:     { value: new Float32Array(sortedHeights) },
+        layerHeights:     { value: new Float32Array(layers.map(l => l.heightFraction)) },
         layerColors:      { value: layers.map(l => l.color.clone()) },
         layerIntensities: { value: new Float32Array(layers.map(l => l.intensity)) },
         time:             { value: 0 },
