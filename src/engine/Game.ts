@@ -117,7 +117,7 @@ export class Game {
         this.lightingSystem.setSunHeight(-0.80); // Simon's hand-tuned scene, 11 Aug 2026
 
         // Then initialize grid and terrain
-        this.gridSystem = new GridSystem(this.scene, this.camera);
+        this.gridSystem = new GridSystem();
         this.terrainGenerator = new TerrainGenerator(this.scene, this.gridSystem, this.camera, this.lightingSystem);
         this.terrainControls = new TerrainControls(this.terrainGenerator, () => {
             this.camera.position.copy(CameraParameters.INITIAL_POSITION);

@@ -1,20 +1,28 @@
 import { Color } from 'three';
 
+const WORLD_SIZE = 8000;
+const BUILD_CELL_SIZE = 64;
+const HEIGHT_SAMPLE_SPACING = 64;
+
+/**
+ * Spatial constants have one meaning each. Counts are derived so world size,
+ * build placement, the rendered grid, and height samples cannot silently drift.
+ *
+ * The build grid and height samples currently align one-to-one. They are named
+ * separately because terrain deformation may later need denser height samples
+ * without changing building footprints or navigation cells.
+ */
 export const GridParameters = {
-    TOTAL_SIZE:    8000,
-    DIVISIONS:     100,
-    CELL_SIZE:     64,
-    MIN_DIVISIONS: 1,
-    MAX_DIVISIONS: 1000,
-    MIN_CELL_SIZE: 16,
-    MAX_CELL_SIZE: 256,
-    MIN_TOTAL_SIZE: 1000,
-    MAX_TOTAL_SIZE: 10000,
+    WORLD_SIZE,
+    BUILD_CELL_SIZE,
+    BUILD_CELL_COUNT: WORLD_SIZE / BUILD_CELL_SIZE,
+    HEIGHT_SAMPLE_SPACING,
+    HEIGHT_SAMPLE_COUNT: WORLD_SIZE / HEIGHT_SAMPLE_SPACING + 1,
 } as const;
 
 /**
  * Building footprint sizes, in grid cells (see GridSystem.worldToCell/cellToWorld).
- * 1 cell = CELL_SIZE world units = 64, so SMALL = 64×64, LARGE = 192×192.
+ * 1 cell = BUILD_CELL_SIZE world units = 64, so SMALL = 64×64, LARGE = 192×192.
  * Placement/production (Phase 8) reads these; not wired to real building types yet.
  */
 export const BuildingFootprints = {

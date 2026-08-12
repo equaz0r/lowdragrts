@@ -11,13 +11,13 @@ import { Vector3, Quaternion } from 'three';
  */
 export class HeightMap {
     private readonly heights: Float32Array;
-    private readonly divisions: number;     // render-mesh divisions == GridSystem.getCellCount() (125)
-    private readonly segmentSize: number;   // world units per grid step — == GridParameters.CELL_SIZE (64)
+    private readonly divisions: number;     // height-sample segments per axis (currently 125)
+    private readonly segmentSize: number;   // world units per height sample — currently 64
     private readonly halfSize: number;      // totalSize / 2
 
     /**
      * @param heights   Flat row-major height buffer: index = x + z * (divisions + 1)
-     * @param divisions Render mesh division count. Deliberately == GridSystem.getCellCount(),
+     * @param divisions Height-sample segment count. Currently matches the build-cell count,
      *                  so mesh vertices and grid corners are the same points — see TerrainGrid.ts.
      * @param totalSize World-space size of the terrain (8000)
      */

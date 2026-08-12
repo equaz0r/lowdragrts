@@ -14,7 +14,7 @@ import { createTerrainMaterial } from './TerrainMaterial';
 import { createEdgeMaterial, EdgeUniforms } from './EdgeMaterial';
 import { createTerrainGridMesh, BuildableCells } from './TerrainGrid';
 import { NoiseSampler } from '../utils/NoiseSampler';
-import { TerrainParameters } from '../config/TerrainConfig';
+import { GridParameters, TerrainParameters } from '../config/TerrainConfig';
 import { ReflectionControls } from '../ui/ReflectionControls';
 import { LightingSystem } from './LightingSystem';
 import { BufferPool } from '../utils/BufferPool';
@@ -308,13 +308,21 @@ export class TerrainGenerator {
     public async generate(): Promise<Mesh> {
         this.disposeGeometry();
         this.geometry = new BufferGeometry();
-        const totalSize   = this.gridSystem.getTotalSize();
+        const totalSize   = this.gridSystem.getWorldSize();
         // Render mesh resolution now matches the logical grid exactly (1 quad
         // = 1 cell). Grid lines need to sit ON real mesh vertices, not
         // approximate a differently-resolved surface — that mismatch was the
         // "gaps"/"doesn't line up" problem. See TerrainGrid.ts.
-        const divisions   = this.gridSystem.getCellCount();
-        const segmentSize = totalSize / divisions; // === GridParameters.CELL_SIZE, exactly
+        const divisions   = GridParameters.HEIGHT_SAMPLE_COUNT - 1;
+        const segmentSize = GridParameters.HEIGHT_SAMPLE_SPACING;
+        if (!Number.isInteger(divisions) || divisions * segmentSize !== totalSize) {
+            throw new Error('WORLD_SIZE must be divisible by HEIGHT_SAMPLE_SPACING.');
+        }
+        if (divisions !== this.gridSystem.getCellCount()) {
+            throw new Error(
+                'Terrain rendering currently requires one height segment per build cell.',
+            );
+        }
 
         const vertexCount = (divisions + 1) * (divisions + 1);
         const indexCount  = divisions * divisions * 6;
@@ -553,7 +561,7 @@ export class TerrainGenerator {
      * Notified after every successful generate() (including the very first one
      * and every regenerate() — same-seed slider tweaks too, since the mesh and
      * HeightMap are both replaced wholesale each time).
-     * Precedent: GridSystem's addChangeListener, which this mirrors.
+     * Future sim/nav systems can use this instead of caching a replaced HeightMap.
      */
     public addRegenerateListener(listener: () => void): void {
         this.regenerateListeners.add(listener);

@@ -78,12 +78,12 @@ const SEA_WAVE_STRENGTH  = 0.5;  // was 0.30, same reason
 // unrelated cell size, on top of a coordinate that SCROLLS over time (the
 // old animation technique), can never land on the real grid even by
 // accident. Fixed properly: shard cells now snap EXACTLY to the same
-// GridParameters.CELL_SIZE cells the visible neon grid itself is drawn on
+// GridParameters.BUILD_CELL_SIZE cells the visible neon grid itself is drawn on
 // (same +gridSize/2 half-offset GridSystem.worldToCell() uses — the grid's
 // origin isn't cell-aligned with world (0,0) otherwise, since 4000/64 isn't
 // an integer). Each glint is now literally "this specific floor panel is
 // catching the light", not a coincidentally-similar but separate texture.
-const GLITTER_SHARD_SIZE = GridParameters.CELL_SIZE; // world units — same panels the neon grid draws
+const GLITTER_SHARD_SIZE = GridParameters.BUILD_CELL_SIZE; // world units — same panels the neon grid draws
 // No animation constant here any more (12 Aug 2026, round 14) — round 13's
 // quantized-time re-roll fixed grid alignment but introduced motion with no
 // cause (Simon: shards cycling every couple of seconds on a fully static
