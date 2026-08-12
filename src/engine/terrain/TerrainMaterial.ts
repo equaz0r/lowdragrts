@@ -416,19 +416,30 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         s.fragmentShader = s.fragmentShader.replace(
             '#include <roughnessmap_fragment>',
             `#include <roughnessmap_fragment>
-            roughnessFactor = mix(reflectionParams.y, 0.1, reflectionStrength);
-            // Force fully non-reflective in debug mode too — otherwise Three's
-            // own built-in specular highlight (see LightingConfig.ts's
-            // REFLECTION_PARAMS comment) would still show up ON TOP of the
-            // greyscale debug view and defeat the whole point of isolating
-            // sunGlitter.
+            // Was mix(reflectionParams.y, 0.1, reflectionStrength) — glossier
+            // wherever reflectionStrength (now dominated by sunGlitter) was
+            // high. Real bug (12 Aug 2026, round 15): that's EXACTLY the
+            // shard-lit area, so it was re-triggering Three's own built-in
+            // specular highlight (see REFLECTION_PARAMS' comment in
+            // LightingConfig.ts) right on top of the glitter. Being a smooth,
+            // continuous, physically-driven highlight — not discretized into
+            // shards the way sunGlitter's colour is — it visually overwhelmed
+            // the shard pattern entirely: Simon could see it clearly with
+            // debug off (which forces roughness/metalness fully non-
+            // reflective and so never showed this), but with debug off saw
+            // only "the old reflection", not the glitter underneath it.
+            // Metalness/Roughness are now honest, fixed sliders — no longer
+            // secretly tied to the reflection system. The glitter's shine
+            // comes entirely from colour/brightness (diffuseColor mixing
+            // below), which IS correctly shard-shaped.
+            roughnessFactor = reflectionParams.y;
             if (debugShowGlitter > 0.5) { roughnessFactor = 1.0; }`
         );
 
         s.fragmentShader = s.fragmentShader.replace(
             '#include <metalnessmap_fragment>',
             `#include <metalnessmap_fragment>
-            metalnessFactor = mix(reflectionParams.x, 1.0, reflectionStrength);
+            metalnessFactor = reflectionParams.x;
             if (debugShowGlitter > 0.5) { metalnessFactor = 0.0; }`
         );
 

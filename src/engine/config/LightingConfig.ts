@@ -87,15 +87,22 @@ export const ReflectionParameters = {
     // confirmed empirically (not just theorised): setting Roughness to 1.0
     // live made the mystery streak disappear.
     //
-    // Fix: raise the BASELINE roughness/lower baseline metalness so the
-    // material is near-matte/non-metallic (Three's built-in highlight
-    // minimal-to-invisible) everywhere OUTSIDE the glitter wedge. This does
-    // NOT reduce shininess INSIDE the wedge — mix(baseline, 0.1,
-    // reflectionStrength) still reaches full gloss (0.1 roughness / 1.0
-    // metalness) wherever reflectionStrength climbs high, i.e. exactly where
-    // sunGlitter says it should. Properly GATES all shininess behind
-    // sunGlitter now, rather than shininess being an ambient constant that
-    // sunGlitter merely adds on top of.
+    // Round 9's fix (raise baseline roughness/lower baseline metalness) used
+    // mix(baseline, 0.1, reflectionStrength) so the wedge area could still
+    // get glossy — but round 15 found that mixing was ITSELF the next bug:
+    // wherever reflectionStrength climbs high (the shard-lit glitter area),
+    // roughness dipped low again, RE-triggering Three's built-in specular
+    // right on top of the glitter — a smooth, continuous highlight (not
+    // discretized into shards) that visually overwhelmed the shard colour
+    // pattern entirely (Simon: "I can only see the old reflection, not the
+    // glitter"). x/y are now READ DIRECTLY as fixed material properties in
+    // TerrainMaterial.ts — no longer modulated by reflectionStrength at all.
+    // All of the glitter's shine comes from colour/brightness (diffuseColor
+    // mixing) now, which correctly follows the shard pattern; nothing is
+    // left to reactivate Three's competing built-in highlight. These two
+    // values are just the plain Metalness/Roughness slider defaults now,
+    // not a "baseline for an ambient state" — tune for overall floor
+    // glossiness, independent of the glitter effect entirely.
     REFLECTION_PARAMS: new Vector4(0.1, 0.88, 0.30, 0.90),
     SUN_INTENSITY:     0.5,
 
