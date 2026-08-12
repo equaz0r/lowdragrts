@@ -1,6 +1,7 @@
 # LowDrag RTS — Main Game Plan
 
 **Date:** 12 August 2026  
+**Last updated:** 13 August 2026
 **Status:** Authoritative plan for future development and AI-assisted coding sessions  
 **Project:** Browser-based, heightmap-driven real-time strategy game inspired by *Total Annihilation*
 
@@ -12,7 +13,7 @@
 
 Do not restart the whole project.
 
-Keep the existing terrain and rendering prototype. Fix the small group of known correctness and ownership problems, then build the gameplay simulation as a new, deterministic layer.
+Keep the existing terrain and rendering prototype. The bounded Phase 2.5 correctness/ownership pass is complete; build the gameplay simulation as a new, deterministic layer.
 
 The intended terrain model is now settled:
 
@@ -25,13 +26,12 @@ The intended terrain model is now settled:
 
 ### Immediate order of work
 
-1. Complete **Phase 2.5 — Stabilisation**.
-2. Build **Phase 3A — Minimal deterministic simulation**.
-3. Build **Phase 3B — Shared mutable terrain and static units**.
-4. Add selection and movement.
-5. Add combat and terrain-deforming explosions.
-6. Prove save/replay and cross-browser determinism.
-7. Add multiplayer before the economy becomes large.
+1. Build **Phase 3A — Minimal deterministic simulation**.
+2. Build **Phase 3B — Shared mutable terrain and static units**.
+3. Add selection and movement.
+4. Add combat and terrain-deforming explosions.
+5. Prove save/replay and cross-browser determinism.
+6. Add multiplayer before the economy becomes large.
 
 ### First playable milestone
 
@@ -861,11 +861,15 @@ Exact balance and logistics are not locked. Keep resource state simulation-owned
 
 ## 14. Required Stabilisation Before Gameplay
 
-Complete these as **Phase 2.5**. Keep this work bounded; do not continue indefinite visual polishing.
+**Status: complete on `feature/phase-2-5-stabilisation` (13 August 2026).**
+
+These were completed as **Phase 2.5**. Further valley, water, reflection or terrain-chunk tuning is optional polish and must not delay Phase 3 unless it blocks gameplay.
 
 ### 14.1 Fix shader coordinate spaces
 
-Current problem:
+**Status: completed on `feature/phase-2-5-stabilisation` (`0de719e`). Live testing confirmed the major forward/back-glint targeting problem is resolved; minor panel-edge bleed is deferred polish.**
+
+Original problem:
 
 - `TerrainMaterial.ts` assigns `normalMatrix * normal` to `vWorldNormal`.
 - Three.js `normalMatrix` produces a view-space normal.
@@ -880,7 +884,7 @@ Do not change glint tuning until this correctness bug is fixed.
 
 **Status: completed on `feature/phase-2-5-stabilisation`. Shared live reflection state preserves regeneration/recompile values; versioned scene imports now validate, clamp and migrate legacy partial exports.**
 
-Current problems:
+Original problems:
 
 - Reflection controls clone defaults and update the current shader.
 - Setting `material.needsUpdate` recompiles the shader and can restore default uniform values.
@@ -900,7 +904,9 @@ Required result:
 
 ### 14.3 Fix HeightMap bounds
 
-Current problem:
+**Status: completed on `feature/phase-2-5-stabilisation` (`0ce9b03`), with edge/corner/outside-map tests.**
+
+Original problem:
 
 - `worldToGrid()` clamps integer cell indices but leaves fractional offsets based on the unclamped world point.
 - Out-of-bounds queries can extrapolate instead of returning a clamped edge value.
@@ -914,6 +920,8 @@ Required result:
 
 ### 14.4 Fix terrain/grid lifecycle and disposal
 
+**Status: completed on `feature/phase-2-5-stabilisation` (`90f8ade`). Terrain surface/child ownership and HMR/disposal races are explicitly handled.**
+
 Check and correct:
 
 - Dispose child terrain-grid geometry and material during regeneration.
@@ -924,6 +932,8 @@ Check and correct:
 - Regenerate repeatedly while monitoring renderer geometry counts.
 
 ### 14.5 Correct performance reporting
+
+**Status: completed on `feature/phase-2-5-stabilisation` (`f36b9f4`). The overlay reports renderer resource counts honestly.**
 
 `renderer.info.memory.geometries` and `.textures` are object counts, not byte counts. Stop displaying them as fabricated megabytes.
 
@@ -1030,7 +1040,7 @@ The project builds, launches and has a stable terrain/rendering baseline.
 
 ### Phase 2 — Terrain and visual prototype
 
-**Status:** Functionally complete, with Phase 2.5 corrective work outstanding.
+**Status:** Complete. Remaining valley/water/reflection items are optional polish and not gameplay blockers.
 
 Delivered:
 
@@ -1045,6 +1055,8 @@ Optional visual work such as organic valleys is not blocking gameplay.
 
 ### Phase 2.5 — Correctness, ownership and tooling
 
+**Status:** Complete on `feature/phase-2-5-stabilisation`; `npm run verify` passes with 36 tests as of 13 August 2026.
+
 **Scope:** Section 14.
 
 **Exit criteria:**
@@ -1057,6 +1069,13 @@ Optional visual work such as organic valleys is not blocking gameplay.
 - `npm run verify` exists and passes.
 - Production build is genuinely production mode.
 - Authoritative docs do not claim nonexistent systems.
+
+Additional Phase 2.5 quality-of-life work delivered:
+
+- Versioned terrain, lighting and full-scene sharing codes.
+- Collapsible, persistent debug-panel layout.
+- Closed terrain-chunk walls/base with a surface-matched 64-unit side grid.
+- Swept camera/terrain collision, including terrain-following surface pan.
 
 ### Phase 3A — Minimal deterministic simulation
 
@@ -1310,7 +1329,7 @@ Measure:
 ### Too much visual tuning before gameplay
 
 **Risk:** The project continues polishing terrain indefinitely.  
-**Mitigation:** Phase 2.5 fixes correctness only. Optional valley/water polish waits until after the combat sandbox unless it blocks gameplay.
+**Mitigation:** Phase 2.5 remained bounded to correctness and a small set of terrain UX improvements. Optional valley/water/reflection polish waits until after the combat sandbox unless it blocks gameplay.
 
 ### Phase size and hobby-project momentum
 
@@ -1410,4 +1429,4 @@ LowDrag RTS should proceed as:
 
 The terrain prototype is worth keeping. The gameplay layer should be new. Terrain destruction should be designed into the authoritative heightfield before combat and pathfinding become deeply established.
 
-The next coding task is **Phase 2.5, item 14.1: fix the terrain shader's coordinate-space mismatch and verify the live glint before changing any tuning constants**.
+The next coding task is **Phase 3A: create the smallest Three.js-free deterministic simulation loop**. Start with typed commands/queue, integer ticks, a minimal `SimWorld` and `UnitStore` (spawn/stop only), checksum/replay plumbing, and a test proving two independent 1,000-tick runs produce identical checksum streams. Do not add navigation or combat yet.

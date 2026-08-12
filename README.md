@@ -6,9 +6,9 @@ Procedurally generated terrain presented as a closed terrain chunk, with a synth
 
 ## Status
 
-**Phase 2 (terrain) is essentially complete.** Procedural heightmap terrain, a closed wall-and-base terrain chunk with metallic violet sides and a matching side grid, a unified visual/build grid, plateau build-sites, region-masked flatland/mountain zoning, rotatable valley carving, and a full synthwave visual pass (bloom, dynamic lighting, terrain reflections) are all in and working.
+**Phase 2 terrain and Phase 2.5 stabilisation are complete.** Procedural heightmap terrain, a closed wall-and-base terrain chunk with metallic violet sides and a matching side grid, a unified visual/build grid, plateau build-sites, region-masked flatland/mountain zoning, rotatable valley carving, camera collision, settings/sharing, automated verification, and the full synthwave visual pass are in and working.
 
-**No units, combat, projectiles, or resources yet.** A full game-simulation architecture (multiplayer-first, deterministic fixed-tick sim, SoA unit data for 300+ unit scale) is planned for Phase 3 onward — see `Main-GamePlan12-08-2026.md` for the authoritative plan and `CLAUDE.md` for current implementation notes.
+**No units, combat, projectiles, or resources yet.** The next task is Phase 3A: a minimal Three.js-free deterministic fixed-tick simulation with commands, replay/checksums and a small SoA-style unit store. See `Main-GamePlan12-08-2026.md` for the authoritative plan and `CLAUDE.md` for current implementation notes.
 
 ### Known issues
 - 🟡 A small amount of sun-glint bleed remains at some panel edges. The major forward/back-glint issue is fixed and live-tested; this remaining visual polish is not blocking gameplay work.
