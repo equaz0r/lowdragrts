@@ -33,7 +33,10 @@ export class SettingsIO {
     private reflectionControls: ReflectionControls;
     private dragHandle: DragHandle | null = null;
     private terrainSeedInput!: HTMLInputElement;
-    private readonly regenerateListener = () => this.refreshTerrainSeed();
+    private lightingCodeInput!: HTMLInputElement;
+    private sceneCodeInput!: HTMLInputElement;
+    private readonly regenerateListener = () => this.refreshShareValues();
+    private readonly shareSettingsListener = () => this.refreshShareValues();
 
     constructor(
         terrainGenerator: TerrainGenerator,
@@ -134,7 +137,9 @@ export class SettingsIO {
         this.container.appendChild(resetRow);
 
         this.terrainGenerator.addRegenerateListener(this.regenerateListener);
-        this.refreshTerrainSeed();
+        this.edgeControls.addChangeListener(this.shareSettingsListener);
+        this.reflectionControls.addChangeListener(this.shareSettingsListener);
+        this.refreshShareValues();
         document.body.appendChild(this.container);
     }
 
@@ -170,13 +175,13 @@ export class SettingsIO {
             () => String(this.terrainGenerator.getSeed()),
             value => this.loadTerrainSeed(value),
         );
-        this.makeShareRow(
+        this.lightingCodeInput = this.makeShareRow(
             'Lighting Code (sun + reflections)',
             'LDR-L1-…',
             () => encodeLightingCode(this.reflectionControls.exportSettings()),
             value => this.loadLightingCode(value),
         );
-        this.makeShareRow(
+        this.sceneCodeInput = this.makeShareRow(
             'Full Scene Code (terrain + grid + lighting)',
             'LDR-S1-…',
             () => encodeSceneCode(this.captureSceneSettings()),
@@ -259,6 +264,19 @@ export class SettingsIO {
         }
     }
 
+    /** Show current share values rather than placeholder-only paste boxes. */
+    private refreshShareValues(): void {
+        this.refreshTerrainSeed();
+        if (this.lightingCodeInput) {
+            this.lightingCodeInput.value = encodeLightingCode(
+                this.reflectionControls.exportSettings(),
+            );
+        }
+        if (this.sceneCodeInput) {
+            this.sceneCodeInput.value = encodeSceneCode(this.captureSceneSettings());
+        }
+    }
+
     private loadTerrainSeed(value: string): void {
         const trimmed = value.trim();
         if (!/^\d{1,10}$/.test(trimmed)) {
@@ -285,6 +303,7 @@ export class SettingsIO {
                 this.captureSceneSettings(),
             );
             this.reflectionControls.importSettings(normalized.reflection);
+            this.refreshShareValues();
             this.status.textContent = 'Lighting code loaded';
         } catch (error) {
             this.status.textContent = 'Lighting code failed: '
@@ -308,7 +327,7 @@ export class SettingsIO {
         this.edgeControls.importSettings(data.edge);
         this.reflectionControls.importSettings(data.reflection);
         this.terrainControls.importSettings(data.terrain);
-        this.refreshTerrainSeed();
+        this.refreshShareValues();
     }
 
     private exportToTextarea(): void {
@@ -350,6 +369,8 @@ export class SettingsIO {
 
     public dispose(): void {
         this.terrainGenerator.removeRegenerateListener(this.regenerateListener);
+        this.edgeControls.removeChangeListener(this.shareSettingsListener);
+        this.reflectionControls.removeChangeListener(this.shareSettingsListener);
         this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);

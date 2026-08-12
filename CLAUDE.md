@@ -277,6 +277,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Cleaned documentation authority: README now reflects the resolved glint and real verification commands, `Main-GamePlan12-08-2026.md` is explicitly authoritative, and every stale file under `docs/` has a historical warning plus a current-doc index. |
 | 12 Aug 2026 | Completed scene-settings hardening: moved the versioned schema/normalizer into a pure config module, added safe legacy-partial migration, rejects unsupported future versions, validates colours/booleans and clamps every numeric field to its real UI range before applying anything. Added focused tests. |
 | 12 Aug 2026 | Added clearly labelled sharing controls: visible/loadable 10-digit-max Terrain Seed, Lighting Code and Full Scene Code alongside the existing readable JSON. Codes have self-identifying version prefixes and reversible payloads; seed display follows regeneration/import. |
+| 12 Aug 2026 | Fixed share-code visibility after live review: Lighting and Full Scene fields now show their current codes immediately instead of placeholder text, and stay current after terrain regeneration, JSON/code loads, and lighting/grid slider changes. Copy still regenerates the value defensively. |
 
 ---
 *Update this file at the end of every coding session.*

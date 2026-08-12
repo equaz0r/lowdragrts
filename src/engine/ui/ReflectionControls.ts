@@ -26,6 +26,7 @@ export class ReflectionControls {
     private state: TerrainReflectionState;
     private lightingSystem: LightingSystem;
     private dragHandle: DragHandle | null = null;
+    private changeListeners: Set<() => void> = new Set();
 
     constructor(
         state: TerrainReflectionState,
@@ -130,6 +131,7 @@ export class ReflectionControls {
             const newValue = parseFloat(slider.value);
             valueDisplay.textContent = newValue.toFixed(2);
             onChange(newValue);
+            this.notifyChange();
         });
 
         sliderContainer.appendChild(slider);
@@ -305,10 +307,24 @@ export class ReflectionControls {
         // curve out completely — clamp into the current slider's range so an
         // old save degrades to "very wide" rather than something broken.
         this.state.glitterReach.y = Math.min(3.0, Math.max(0.2, data.glitterWidth ?? this.state.glitterReach.y));
+        this.notifyChange();
         this.renderAll(); // refresh sliders to match
     }
 
+    public addChangeListener(listener: () => void): void {
+        this.changeListeners.add(listener);
+    }
+
+    public removeChangeListener(listener: () => void): void {
+        this.changeListeners.delete(listener);
+    }
+
+    private notifyChange(): void {
+        this.changeListeners.forEach(listener => listener());
+    }
+
     public dispose(): void {
+        this.changeListeners.clear();
         this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);

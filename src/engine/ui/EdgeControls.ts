@@ -23,6 +23,7 @@ export class EdgeControls {
     private container: HTMLDivElement;
     private terrainGenerator: TerrainGenerator;
     private dragHandle: DragHandle | null = null;
+    private changeListeners: Set<() => void> = new Set();
 
     constructor(terrainGenerator: TerrainGenerator) {
         this.terrainGenerator = terrainGenerator;
@@ -137,6 +138,7 @@ export class EdgeControls {
             const applied = onChange(v) ?? v;
             slider.value = String(applied);
             val.textContent = fmt(applied);
+            this.notifyChange();
         });
 
         sliderRow.appendChild(slider);
@@ -189,6 +191,7 @@ export class EdgeControls {
                 if (u) {
                     (u.layerColors.value as Color[])[idx].copy(layer.color);
                 }
+                this.notifyChange();
             });
 
             const colorLbl = document.createElement('span');
@@ -314,10 +317,24 @@ export class EdgeControls {
             u.pulseWidth.value = EdgeParameters.pulseWidth;
         }
 
+        this.notifyChange();
         this.renderAll(); // refresh sliders/pickers to match
     }
 
+    public addChangeListener(listener: () => void): void {
+        this.changeListeners.add(listener);
+    }
+
+    public removeChangeListener(listener: () => void): void {
+        this.changeListeners.delete(listener);
+    }
+
+    private notifyChange(): void {
+        this.changeListeners.forEach(listener => listener());
+    }
+
     public dispose(): void {
+        this.changeListeners.clear();
         this.dragHandle?.destroy();
         if (this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
