@@ -37,10 +37,17 @@ export class HeightMap {
      * Clamps to grid bounds.
      */
     private worldToGrid(worldX: number, worldZ: number): { ix: number; iz: number; fx: number; fz: number } {
-        const gx = (worldX + this.halfSize) / this.segmentSize;
-        const gz = (worldZ + this.halfSize) / this.segmentSize;
-        const ix = Math.max(0, Math.min(this.divisions - 1, Math.floor(gx)));
-        const iz = Math.max(0, Math.min(this.divisions - 1, Math.floor(gz)));
+        // Clamp the FRACTIONAL grid position before deriving its cell and
+        // within-cell offsets. Previously only ix/iz were clamped: an outside
+        // point could produce fx/fz far below 0 or above 1, causing bilinear
+        // interpolation to extrapolate beyond the edge heights. Edge normals
+        // (which deliberately sample one segment outside) inherited the same
+        // error. At the positive boundary gx==divisions, the final cell with
+        // fx==1 correctly resolves to the last row/column of samples.
+        const gx = Math.max(0, Math.min(this.divisions, (worldX + this.halfSize) / this.segmentSize));
+        const gz = Math.max(0, Math.min(this.divisions, (worldZ + this.halfSize) / this.segmentSize));
+        const ix = Math.min(this.divisions - 1, Math.floor(gx));
+        const iz = Math.min(this.divisions - 1, Math.floor(gz));
         return { ix, iz, fx: gx - ix, fz: gz - iz };
     }
 
