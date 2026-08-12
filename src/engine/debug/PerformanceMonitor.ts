@@ -8,7 +8,7 @@ interface PerformanceMetrics {
     triangles: number;
     points: number;
     lines: number;
-    memoryUsage: {
+    rendererResources: {
         geometries: number;
         textures: number;
     };
@@ -53,7 +53,7 @@ export class PerformanceMonitor {
             triangles: 0,
             points: 0,
             lines: 0,
-            memoryUsage: {
+            rendererResources: {
                 geometries: 0,
                 textures: 0
             },
@@ -160,7 +160,10 @@ export class PerformanceMonitor {
             this.metrics.triangles = info.render.triangles;
             this.metrics.points = info.render.points;
             this.metrics.lines = info.render.lines;
-            this.metrics.memoryUsage = {
+            // renderer.info.memory exposes RESOURCE COUNTS, not byte sizes.
+            // Keep the names honest; real GPU-memory estimates require known
+            // buffer lengths and texture formats and are a separate feature.
+            this.metrics.rendererResources = {
                 geometries: info.memory.geometries,
                 textures: info.memory.textures
             };
@@ -191,9 +194,9 @@ export class PerformanceMonitor {
             `Frame Time: ${this.metrics.frameTime.toFixed(1)} ms`,
             `Draw Calls: ${this.metrics.drawCalls}`,
             `Triangles: ${(this.metrics.triangles/1000).toFixed(1)}k`,
-            `GPU Memory:`,
-            `  Geometries: ${formatMemory(this.metrics.memoryUsage.geometries * 1024)}`,
-            `  Textures: ${formatMemory(this.metrics.memoryUsage.textures * 1024)}`
+            `Renderer Resources:`,
+            `  Geometries: ${this.metrics.rendererResources.geometries}`,
+            `  Textures: ${this.metrics.rendererResources.textures}`
         ];
 
         // Add JS memory stats if available

@@ -74,7 +74,7 @@ src/
     │                               #   handle on every rebuild.
     │
     ├── debug/
-    │   └── PerformanceMonitor.ts   # FPS, frame time, draw calls, memory overlay (singleton).
+    │   └── PerformanceMonitor.ts   # FPS, frame time, draw calls, resource counts + JS heap (singleton).
     │                               #   Uses stored element refs (this.statsContainer etc.), NOT
     │                               #   this.container.firstChild/children[N] — keep it that way.
     │
@@ -130,6 +130,8 @@ tools/
 - ✅ Sun glitter path — explicitly authored wedge envelope along the real camera→sun ground axis (`calculateSunGlitter()`, `TerrainMaterial.ts`), textured with grid-aligned shard sparkle, shape-verified via `tools/simulate-sun-glitter.js` rather than eyeballed. See Active Tuning Notes below for the constants/gotchas.
 - ✅ Valley corridor rotation (`TerrainGenerator.ts`) — `TerrainConfig.valleyAngle` (0–360°, slider in `TerrainControls`), rotates the Gaussian valley-carving corridor. Defaults to 90° in all presets (runs east-west, aligned with the sun's fixed westward orbit).
 - ✅ Noise visualiser at `/noise-visualizer.html`, performance monitor, buffer pooling
+
+PerformanceMonitor's `Geometries` and `Textures` values are Three.js resource counts, not GPU-memory byte estimates. JS heap values are shown only when the browser exposes them.
 
 ## What's NOT Implemented (yet)
 - ❌ Units, combat, projectiles
@@ -259,6 +261,7 @@ Teams, unit stats, combat + auto-acquire, pooled projectiles, LoS, death/removal
 | 12 Aug 2026 | Centralised reflection/glitter ownership in `TerrainReflectionState`: controls and shader uniforms now share live vectors, regenerated materials reuse the current values, and uniform edits no longer trigger shader recompilation. Sun settings export the live intensity target, and the intensity slider now also affects terrain illumination rather than being overwritten every frame. |
 | 12 Aug 2026 | Fixed `HeightMap.worldToGrid()` boundary extrapolation: fractional grid coordinates are now clamped before cell/fraction derivation, so off-map queries resolve to edge heights and edge normals no longer sample invented values. |
 | 12 Aug 2026 | Hardened regeneration/HMR cleanup: terrain child grid geometry/material now dispose on every regeneration, surface buffers retain their separate BufferPool release path, `TerrainGenerator` handles async initialise/regenerate disposal races, and `Game.dispose()` is idempotent and disposes OrbitControls safely. |
+| 12 Aug 2026 | Corrected the performance overlay: Three.js `renderer.info.memory` geometry/texture values are now labelled as resource counts instead of being multiplied by 1 KiB and presented as invented GPU-memory megabytes. |
 
 ---
 *Update this file at the end of every coding session.*
