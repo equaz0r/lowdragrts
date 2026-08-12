@@ -198,6 +198,31 @@ const GLITTER_BASE_GLOW = 0.12;
 // read from GLITTER_SHARD_SEAM legible alongside the softer glow.
 const GLITTER_SHARD_GLOW_FLOOR = 0.35;
 
+// Back-hemisphere glint (round 20, 12 Aug 2026) — Simon correctly pushed
+// back on "no glint with the sun behind you is expected": real specular
+// reflection needs the surface NORMAL to bisect sun direction and view
+// direction (the half-vector H), not the sun to be in front of the camera.
+// calculateSunGlitter()'s `inFront` gate hard-zeros anything on the
+// camera's far side of the camera->sun ground axis — correct for keeping
+// the round-18 "perfect combination" wedge exactly as tuned, but it means
+// a hillside that genuinely faces both back toward the camera AND up
+// toward a sun behind it never got a chance to glint at all, regardless
+// of its actual slope. calculateBackGlint() below is the other half: a
+// true Blinn-Phong half-vector test against the REAL per-fragment
+// geometric normal (so flat ground stays dark — a mostly-horizontal H
+// from a low sun/shallow camera angle just can't satisfy dot(N,H) there;
+// only genuinely favourably-tilted slopes light up), with a small per-
+// shard random tilt on top so a favourable hillside reads as a scattered
+// glint texture rather than one smooth streak — a raw specular test
+// against the terrain's actual (smooth, low-frequency) normal field
+// would produce exactly that streak, the same failure mode rounds 5-6
+// shipped and had to revert for the forward case. Deliberately a
+// SEPARATE, additive term, not a merge into calculateSunGlitter() —
+// keeps the locked-in forward wedge completely unrisked.
+const BACK_GLINT_JITTER    = 0.20;  // per-shard normal tilt strength
+const BACK_GLINT_SHININESS = 8.0;   // Blinn-Phong exponent — lower = more forgiving/wider catch
+const BACK_GLINT_GATE_WIDTH = 500;  // world units — smooth handoff width from the forward wedge's region
+
 /**
  * Creates the main terrain surface material with the reflection + panel shader.
  * Extracted from TerrainGenerator to keep material authoring self-contained.
@@ -325,6 +350,44 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             }
 
             /**
+             * Grid-aligned shard sparkle texture — SAME +mapSize/2 half-offset
+             * GridSystem.worldToCell() uses (the grid's own origin isn't
+             * aligned to world (0,0) otherwise), floored BEFORE hashing so a
+             * whole cell shares one value (flat, coherent tiles, not per-
+             * pixel noise), with a thin dark seam and a per-shard radial glow
+             * on top. Extracted (round 20, 12 Aug 2026) from calculateSunGlitter()
+             * so calculateBackGlint() below can reuse the exact same visual
+             * texture/grid alignment instead of drifting out of sync with a
+             * second copy.
+             */
+            float shardSparkle(vec2 worldXZ, float mapSize) {
+                vec2 gridAligned = (worldXZ + vec2(mapSize * 0.5)) / ${GLITTER_SHARD_SIZE.toFixed(1)};
+                vec2 shardCell = floor(gridAligned);
+                vec2 shardFrac = fract(gridAligned);
+                float n = glitterHash(shardCell);
+                float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
+
+                // Distance from this fragment to the nearest cell edge, on
+                // whichever axis is closer — 0 exactly on the seam, 0.5 at
+                // the shard's centre. Darkening near the seam is what makes
+                // adjacent lit shards read as separate tiles instead of
+                // fusing into one shapeless patch.
+                vec2 edgeDist = min(shardFrac, 1.0 - shardFrac);
+                float distToEdge = min(edgeDist.x, edgeDist.y);
+                float shardMask = smoothstep(0.0, ${GLITTER_SHARD_SEAM.toFixed(2)}, distToEdge);
+                sparkle *= shardMask;
+
+                // Radial glow from the shard's own CENTRE (round 17) — a lit
+                // shard is brightest in the middle, fading toward its edges,
+                // like a small soft highlight, instead of a flat-coloured
+                // rectangle.
+                float distFromShardCenter = length(shardFrac - 0.5);
+                float shardGlow = 1.0 - smoothstep(0.0, 0.5, distFromShardCenter);
+                sparkle *= mix(${GLITTER_SHARD_GLOW_FLOOR.toFixed(2)}, 1.0, shardGlow);
+                return sparkle;
+            }
+
+            /**
              * How far along, and how far sideways, worldXZ is from the
              * straight ground-plane line running from camXZ through sunXZ.
              * Shared by the glitter wedge below AND calculateReflection()'s
@@ -398,54 +461,16 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // rather than a plateau-then-cliff.
                 float wedgeFactor = 1.0 - smoothstep(0.0, allowedWidth, lateralOffset);
 
-                // Grid-aligned cell coordinate — SAME +mapSize/2 half-offset
-                // GridSystem.worldToCell() uses (the grid's own origin isn't
-                // aligned to world (0,0) otherwise: mapSize/2 / CELL_SIZE
-                // isn't an integer at the default 8000/64). Floor BEFORE
-                // hashing — every fragment inside the same cell gets the SAME
-                // hash value, so a whole shard lights up flat and uniform
-                // instead of each pixel rolling independently (the literal
-                // cause of the "TV static" look), and now lands on the exact
-                // same panel the visible neon grid draws.
-                vec2 gridAligned = (worldPos.xz + vec2(mapSize * 0.5)) / ${GLITTER_SHARD_SIZE.toFixed(1)};
-                vec2 shardCell = floor(gridAligned);
-                vec2 shardFrac = fract(gridAligned);
                 // NOT time-animated (12 Aug 2026, round 14) — Simon correctly
-                // flagged the periodic re-roll from round 13 as motion with
-                // no cause: shards were cycling every couple of seconds even
-                // with a fully static camera and sun. A shard's brightness is
-                // now a pure function of its position — deterministic, no
-                // time input at all. It still visibly changes as the camera
-                // or sun actually moves, because wedgeFactor/facingSunGate
-                // below depend on live camera/sun position and sweep
-                // different shards into and out of the wedge — that's
-                // legitimate, motivated change. A static view now shows a
-                // genuinely static pattern, full stop.
-                float n = glitterHash(shardCell);
-                float sparkle = pow(n, ${GLITTER_SPARKLE_CONTRAST.toFixed(2)});
-
-                // Distance from this fragment to the nearest cell edge, on
-                // whichever axis is closer — 0 exactly on the seam, 0.5 at
-                // the shard's centre. Darkening near the seam is what makes
-                // adjacent lit shards read as separate tiles instead of
-                // fusing into one shapeless patch.
-                vec2 edgeDist = min(shardFrac, 1.0 - shardFrac);
-                float distToEdge = min(edgeDist.x, edgeDist.y);
-                float shardMask = smoothstep(0.0, ${GLITTER_SHARD_SEAM.toFixed(2)}, distToEdge);
-                sparkle *= shardMask;
-
-                // Radial glow from the shard's own CENTRE (round 17) — a lit
-                // shard is brightest in the middle, fading toward its edges,
-                // like a small soft highlight, instead of a flat-coloured
-                // rectangle. This is the main lever for "looks like paint"
-                // vs. "looks like a glint" — a uniform-brightness tile reads
-                // as flat colour no matter how bright it is; a bright centre
-                // fading outward reads as light. GLITTER_SHARD_GLOW_FLOOR
-                // keeps edges dimmed rather than fully black, so the seam
-                // above still reads as a grid line, not a hard cutoff.
-                float distFromShardCenter = length(shardFrac - 0.5);
-                float shardGlow = 1.0 - smoothstep(0.0, 0.5, distFromShardCenter);
-                sparkle *= mix(${GLITTER_SHARD_GLOW_FLOOR.toFixed(2)}, 1.0, shardGlow);
+                // flagged a periodic re-roll (round 13) as motion with no
+                // cause: shards were cycling every couple of seconds even
+                // with a fully static camera and sun. shardSparkle() is a
+                // pure function of position, no time input at all. It still
+                // visibly changes as the camera or sun actually moves,
+                // because wedgeFactor/facingSunGate below depend on live
+                // camera/sun position and sweep different shards into and
+                // out of the wedge — that's legitimate, motivated change.
+                float sparkle = shardSparkle(worldPos.xz, mapSize);
 
                 vec3 sunDir = normalize(sunPos - worldPos);
                 float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, sunDir));
@@ -457,6 +482,52 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 float lowSunBoost = mix(1.0, ${GLINT_LOW_SUN_BOOST_MAX.toFixed(2)}, pow(1.0 - sunHeightT, ${GLINT_LOW_SUN_BOOST_POWER.toFixed(2)}));
 
                 return wedgeFactor * mix(${GLITTER_BASE_GLOW.toFixed(2)}, 1.0, sparkle) * facingSunGate * inFront * lowSunBoost;
+            }
+
+            /**
+             * Back-hemisphere glint (round 20) — see BACK_GLINT_* above for
+             * the full reasoning. Real specular reflection needs the LOCAL
+             * surface normal to bisect sun direction and view direction (the
+             * half-vector H) — it doesn't require the sun to be in front of
+             * the camera the way calculateSunGlitter()'s wedge does. This is
+             * the other half: a true Blinn-Phong half-vector test against the
+             * REAL per-fragment geometric normal, so it only lights up where
+             * the actual terrain shape is favourably tilted (flat ground
+             * stays dark — a mostly-horizontal H, which is what a low sun and
+             * a shallow camera angle produce, just can't satisfy dot(N,H)
+             * against a flat normal), with a small per-shard random tilt on
+             * top (shardSparkle()'s same grid, different hash offset so the
+             * jitter isn't correlated with the sparkle brightness pattern) so
+             * a favourable hillside reads as a scattered glint texture, not
+             * one smooth streak.
+             */
+            float calculateBackGlint(vec3 worldPos, vec3 geomNormal, vec3 sunPos, vec3 camPos, float mapSize) {
+                vec3 toSun = normalize(sunPos - worldPos);
+                vec3 toCam = normalize(camPos - worldPos);
+
+                vec2 gridAligned = (worldPos.xz + vec2(mapSize * 0.5)) / ${GLITTER_SHARD_SIZE.toFixed(1)};
+                vec2 shardCell = floor(gridAligned);
+                float jitterA = glitterHash(shardCell + vec2(17.0, 91.0)) - 0.5;
+                float jitterB = glitterHash(shardCell + vec2(53.0, 29.0)) - 0.5;
+                vec3 facetNormal = normalize(geomNormal + vec3(jitterA, 0.0, jitterB) * ${BACK_GLINT_JITTER.toFixed(2)});
+
+                vec3 halfVector = normalize(toSun + toCam);
+                float spec = pow(max(dot(facetNormal, halfVector), 0.0), ${BACK_GLINT_SHININESS.toFixed(1)});
+
+                float facingSunGate = smoothstep(-0.05, 0.05, dot(geomNormal, toSun));
+                float facingCamGate = smoothstep(-0.05, 0.05, dot(geomNormal, toCam));
+
+                // Only active in the hemisphere calculateSunGlitter's wedge
+                // doesn't cover (along < 0, i.e. the camera's far side of the
+                // camera->sun axis) — smooth transition, not a hard line, so
+                // there's no visible seam where the two effects hand off.
+                float along, lateralOffset;
+                sunAxisInfo(worldPos.xz, sunPos.xz, camPos.xz, along, lateralOffset);
+                float behindGate = 1.0 - smoothstep(-${BACK_GLINT_GATE_WIDTH.toFixed(1)}, 0.0, along);
+
+                float sparkle = shardSparkle(worldPos.xz, mapSize);
+
+                return spec * sparkle * facingSunGate * facingCamGate * behindGate;
             }
 
             float calculateReflection() {
@@ -502,7 +573,16 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
                 // frequency/amplitude/purpose, not merged.
                 vec3 geomNormal = normalize(vWorldNormal);
                 float sunGlitter = calculateSunGlitter(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, time, gridSize);
-                debugGlitterValue = sunGlitter; // for the debug isolation view — see uniform declaration above
+
+                // Back-hemisphere glint (round 20) — see calculateBackGlint()
+                // above. Covers the region calculateSunGlitter()'s wedge
+                // explicitly doesn't (sun behind the camera) via real
+                // half-vector specular against the actual terrain slope, so
+                // it's zero on flat ground and only lights up favourably-
+                // tilted hillsides — not "everything glows twice as much."
+                float backGlint = calculateBackGlint(vWorldPosition, geomNormal, sunWorldPosition, cameraPosition, gridSize);
+
+                debugGlitterValue = sunGlitter + backGlint; // for the debug isolation view — see uniform declaration above
 
                 // Shared facing-sun gate (round 19) — applied below to
                 // EVERY reflectivity term except sunGlitter (which already
@@ -549,6 +629,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
 
                 float totalFactor = pow(
                     sunGlitter     * ${ReflectionParameters.SUN_GLITTER_WEIGHT.toFixed(2)} +
+                    backGlint      * ${ReflectionParameters.SUN_GLITTER_WEIGHT.toFixed(2)} +
                     positionFactor * ${ReflectionParameters.POSITION_FACTOR_WEIGHT.toFixed(2)} +
                     panelFactor    * ${ReflectionParameters.PANEL_FACTOR_WEIGHT.toFixed(2)} +
                     grazingFactor * heightFactor * ${ReflectionParameters.GRAZING_FACTOR_WEIGHT.toFixed(2)},

@@ -59,6 +59,12 @@ const GLITTER_SHARD_GLOW_FLOOR = 0.35;
 const GLINT_LOW_SUN_BOOST_MAX = 2.0;
 const GLINT_LOW_SUN_BOOST_POWER = 6.0;
 
+// Round 20 (12 Aug 2026) — back-hemisphere glint, see TerrainMaterial.ts's
+// BACK_GLINT_* comment for the full reasoning.
+const BACK_GLINT_JITTER = 0.20;
+const BACK_GLINT_SHININESS = 8.0;
+const BACK_GLINT_GATE_WIDTH = 500;
+
 // --- Keep in sync with LightingSystem.ts's updateSunPosition() ---
 const SUN_ORBIT_RADIUS = 8000;
 const SUN_MAX_ANGLE = 2.6451383319538957;
@@ -123,6 +129,61 @@ function calculateSunGlitter(worldPos, geomNormal, sunPos, camPos, time, sunHeig
 
     const lowSunBoost = mix(1.0, GLINT_LOW_SUN_BOOST_MAX, Math.pow(1.0 - sunHeightT, GLINT_LOW_SUN_BOOST_POWER));
     return wedgeFactor * mix(GLITTER_BASE_GLOW, 1.0, sparkle) * facingSunGate * inFront * lowSunBoost;
+}
+
+// Shared shard-texture helper, matching TerrainMaterial.ts's extracted
+// shardSparkle() (round 20).
+function shardSparkle(worldXZ, mapSize) {
+    const gridAligned = [(worldXZ[0] + mapSize*0.5) / GLITTER_SHARD_SIZE, (worldXZ[1] + mapSize*0.5) / GLITTER_SHARD_SIZE];
+    const shardCell = [Math.floor(gridAligned[0]), Math.floor(gridAligned[1])];
+    const shardFrac = [gridAligned[0]-shardCell[0], gridAligned[1]-shardCell[1]];
+    const n = glitterHash(shardCell);
+    let sparkle = Math.pow(n, GLITTER_SPARKLE_CONTRAST);
+    const edgeDist = [Math.min(shardFrac[0], 1-shardFrac[0]), Math.min(shardFrac[1], 1-shardFrac[1])];
+    const distToEdge = Math.min(edgeDist[0], edgeDist[1]);
+    const shardMask = smoothstep(0, GLITTER_SHARD_SEAM, distToEdge);
+    sparkle *= shardMask;
+    const distFromShardCenter = Math.hypot(shardFrac[0]-0.5, shardFrac[1]-0.5);
+    const shardGlow = 1.0 - smoothstep(0, 0.5, distFromShardCenter);
+    sparkle *= mix(GLITTER_SHARD_GLOW_FLOOR, 1.0, shardGlow);
+    return sparkle;
+}
+
+// --- calculateBackGlint(), translated 1:1 from the GLSL (round 20) ---
+// Real specular reflection needs the LOCAL SURFACE NORMAL to bisect sun
+// direction and view direction (the half-vector H) — it doesn't require
+// the sun to be in front of the camera the way calculateSunGlitter()'s
+// wedge does. Simon correctly called out that a slope facing both back
+// toward the camera and up toward a sun behind it should still glint.
+function calculateBackGlint(worldPos, geomNormal, sunPos, camPos, mapSize) {
+    const toSun = norm3(sub3(sunPos, worldPos));
+    const toCam = norm3(sub3(camPos, worldPos));
+
+    const gridAligned = [(worldPos[0] + mapSize*0.5) / GLITTER_SHARD_SIZE, (worldPos[2] + mapSize*0.5) / GLITTER_SHARD_SIZE];
+    const shardCell = [Math.floor(gridAligned[0]), Math.floor(gridAligned[1])];
+    const jitterA = glitterHash([shardCell[0]+17.0, shardCell[1]+91.0]) - 0.5;
+    const jitterB = glitterHash([shardCell[0]+53.0, shardCell[1]+29.0]) - 0.5;
+    const facetNormal = norm3(add3(geomNormal, scale3([jitterA, 0.0, jitterB], BACK_GLINT_JITTER)));
+
+    const halfVector = norm3(add3(toSun, toCam));
+    const spec = Math.pow(Math.max(dot3(facetNormal, halfVector), 0.0), BACK_GLINT_SHININESS);
+
+    const facingSunGate = smoothstep(-0.05, 0.05, dot3(geomNormal, toSun));
+    const facingCamGate = smoothstep(-0.05, 0.05, dot3(geomNormal, toCam));
+
+    const camXZ = [camPos[0], camPos[2]];
+    const sunXZ = [sunPos[0], sunPos[2]];
+    const fragXZ = [worldPos[0], worldPos[2]];
+    let axis = [sunXZ[0]-camXZ[0], sunXZ[1]-camXZ[1]];
+    const axisLen = Math.hypot(axis[0], axis[1]);
+    axis = [axis[0]/axisLen, axis[1]/axisLen];
+    const toFrag = [fragXZ[0]-camXZ[0], fragXZ[1]-camXZ[1]];
+    const along = toFrag[0]*axis[0] + toFrag[1]*axis[1];
+    const behindGate = 1.0 - smoothstep(-BACK_GLINT_GATE_WIDTH, 0.0, along);
+
+    const sparkle = shardSparkle([worldPos[0], worldPos[2]], mapSize);
+
+    return spec * sparkle * facingSunGate * facingCamGate * behindGate;
 }
 
 // --- Perspective camera + screen-space raycast to the flat ground plane ---
@@ -217,3 +278,96 @@ console.log('wedgeFactor terms) until the bug is understood, the way this file c
 console.log('(backwards shape, a Lambertian dimmer misused on a specular effect, and this');
 console.log('alignment-vs-width tradeoff) on 11 Aug 2026 — reasoning through the GLSL by hand alone');
 console.log('got it wrong three rounds in a row before this script existed.');
+
+// --- Back-glint check (round 20, 12 Aug 2026) ---
+// calculateSunGlitter()'s wedge is gated to the camera->sun forward
+// hemisphere (`inFront`). Simon correctly pushed back on "no glint with
+// the sun behind you is expected" — a slope that faces both back toward
+// the camera and up toward a sun behind it should still glint by real
+// half-vector optics. calculateBackGlint() is the other half. Checks
+// below, using a real ray-cast camera the same way the wedge tests above
+// do (not just isolated dot-product arithmetic):
+//   1. Flat ground, sun behind camera: should stay near-zero everywhere
+//      (a mostly-horizontal half-vector can't satisfy dot(N,H) against a
+//      flat N) — confirms this doesn't turn into "everything glows".
+//   2. Undulating slopes (alternating east/west-facing), sun behind
+//      camera: favourable (sun-and-camera-facing) slopes should light up
+//      with a SCATTERED texture (multiple '#'/'+' cells, not one single
+//      pixel) — confirms the per-shard jitter actually produces a spread,
+//      not the single-streak failure mode rounds 5-6 shipped and reverted.
+//   3. Sun in FRONT of camera (calculateSunGlitter()'s own territory):
+//      back-glint should stay near-zero — confirms behindGate correctly
+//      hands off to the forward wedge without a bright double-lit seam.
+console.log('\n=== Back-glint check (sun behind camera) ===');
+const backSunHeight = -0.30;
+const backSunPos = sunPosForHeight(backSunHeight);
+console.log(`Sun position for height ${backSunHeight}: [${backSunPos.map(v=>v.toFixed(0)).join(', ')}] (large negative X = west)`);
+
+function renderBackGlintAscii(cam, sunPos, label, useSlopes, W=70, H=45) {
+    const screen = Array.from({length:H}, () => new Array(W).fill(' '));
+    let litCount = 0, groundCount = 0, maxVal = 0;
+    for (let py = 0; py < H; py++) {
+        const sy = 1 - (py/(H-1))*2;
+        for (let px = 0; px < W; px++) {
+            const sx = (px/(W-1))*2 - 1;
+            const dir = cam.rayDir(sx, sy);
+            if (dir[1] >= -0.001) continue;
+            const tHit = -cam.pos[1] / dir[1];
+            if (tHit <= 0) continue;
+            const worldPos = add3(cam.pos, scale3(dir, tHit));
+            if (Math.hypot(worldPos[0], worldPos[2]) > 7000) continue;
+            groundCount++;
+            // Synthetic undulating slope field (alternating east/west-facing
+            // ridges) so both favourable and unfavourable slopes are on
+            // screen at once, like a real hillside would present. Flat
+            // ([0,1,0]) for the "should stay dark" control case.
+            // Amplitude 1.2 ~ up to 50 degrees off vertical at the steepest
+            // point of each ridge — realistic for this game's mountain
+            // slopes (height up to 1400 over 64-unit grid cells produces
+            // local slopes well past 45 degrees), not an exaggeration. A
+            // quick standalone check (12 Aug 2026) found the half-vector
+            // for a low-behind sun is itself fairly close to horizontal, so
+            // dot(N,H) only gets strong against genuinely steep terrain —
+            // 0.5 (~26 degrees) tested here first and came back essentially
+            // dark, which is why this is 1.2, not a smaller "safe" number.
+            const geomNormal = useSlopes ? norm3([1.2 * Math.sin(worldPos[0] * 0.0015), 1, 0]) : [0,1,0];
+            const back = calculateBackGlint(worldPos, geomNormal, sunPos, cam.pos, MAP_SIZE);
+            if (back > maxVal) maxVal = back;
+            if (back > 0.05) litCount++;
+            screen[py][px] = back > 0.5 ? '#' : (back > 0.2 ? '+' : (back > 0.05 ? '.' : ' '));
+        }
+    }
+    console.log(`\n--- ${label} ---`);
+    for (const row of screen) console.log(row.join(''));
+    console.log(`  lit (>0.05): ${litCount}/${groundCount} ground fragments, peak value ${maxVal.toFixed(2)}`);
+    return { litCount, groundCount, maxVal };
+}
+
+// Camera looking EAST (+X), sun is west (large negative X) -> sun is
+// squarely behind the camera. This is exactly the configuration Simon
+// reported: "if I turn the camera orbit so the back of the camera is to
+// the sun, I don't see the glint at all."
+const backCam = makeCamera([-500, 400, 0], { forward: [1, -0.12, 0] }, 75, 0.7);
+const flatResult  = renderBackGlintAscii(backCam, backSunPos, 'Flat ground, sun behind camera (should stay ~empty)', false);
+const slopeResult = renderBackGlintAscii(backCam, backSunPos, 'Undulating slopes, sun behind camera (favourable slopes should light up, scattered)', true);
+
+// Sanity: sun in FRONT of the camera instead — calculateSunGlitter()'s own
+// territory. backGlint should contribute ~nothing here.
+const forwardCam = makeCamera([500, 400, 0], { forward: [-1, -0.12, 0] }, 75, 0.7);
+const forwardResult = renderBackGlintAscii(forwardCam, backSunPos, 'Sun IN FRONT of camera (backGlint should stay ~empty, this is the wedge\'s job)', true);
+
+console.log('\n=== Back-glint PASS/FAIL summary ===');
+const checks = [
+    ['Flat ground stays dark (litCount ~0)', flatResult.litCount === 0],
+    ['Sloped terrain lights up somewhere (litCount > 0)', slopeResult.litCount > 0],
+    ['Sloped terrain is a SPREAD, not one pixel (litCount > 5)', slopeResult.litCount > 5],
+    ['Forward-of-camera sun stays ~dark (litCount < 5)', forwardResult.litCount < 5],
+];
+let allPass = true;
+for (const [desc, pass] of checks) {
+    console.log(`  [${pass ? 'PASS' : 'FAIL'}] ${desc}`);
+    if (!pass) allPass = false;
+}
+console.log(allPass
+    ? '\nAll back-glint checks passed — shape looks like a genuine scattered glint on favourable slopes, not a single pixel or a flat-ground wash.'
+    : '\nSOME BACK-GLINT CHECKS FAILED — do not ship without understanding why (see the failing rows above).');
