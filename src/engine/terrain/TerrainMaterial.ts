@@ -3,10 +3,10 @@ import {
     DoubleSide,
     Color,
     Vector3,
-    Vector2,
 } from 'three';
 import { TerrainParameters, GridParameters } from '../config/TerrainConfig';
 import { ReflectionParameters } from '../config/LightingConfig';
+import { DEFAULT_GLITTER_REACH, TerrainReflectionState } from '../config/ReflectionState';
 
 // Three.js narrows onBeforeCompile's shader argument to WebGLProgramParameters
 // which doesn't expose uniforms in its public type. This local interface matches
@@ -132,7 +132,7 @@ const GLINT_EMISSIVE_INTENSITY = 2.2;
 // slider-adjustable from here on, and Simon wants its range extended —
 // see ReflectionControls.ts).
 const GLITTER_ALONG_NEAR  = 250;
-const GLITTER_ALONG_FAR   = 2500;   // was 6000 — reach full width much sooner
+const GLITTER_ALONG_FAR   = DEFAULT_GLITTER_REACH; // was 6000 — reach full width much sooner
 const GLITTER_WIDTH_NEAR  = 70;     // was 50
 // Round 17 (12 Aug 2026) — the far-end width is no longer a flat constant:
 // Simon wants it to automatically track the sun's apparent size (bigger/
@@ -234,7 +234,11 @@ const BACK_GLINT_GATE_WIDTH = 500;  // world units — smooth handoff width from
  * @param heightScale  This generation's config.heightScale — see the sea
  *   shimmer constants above for why this, not min/max height.
  */
-export function createTerrainMaterial(totalSize: number, heightScale: number): MeshStandardMaterial {
+export function createTerrainMaterial(
+    totalSize: number,
+    heightScale: number,
+    reflectionState: TerrainReflectionState,
+): MeshStandardMaterial {
     const material = new MeshStandardMaterial({
         vertexColors: true,
         wireframe:    TerrainParameters.USE_WIREFRAME,
@@ -258,7 +262,9 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         // (declared by #include <common> itself, populated automatically
         // every frame, no manual push required).
         s.uniforms.gridSize        = { value: totalSize };
-        s.uniforms.reflectionParams = { value: ReflectionParameters.REFLECTION_PARAMS };
+        // Shared live state, not a copy: UI edits update this Vector4 in
+        // place, and regenerated materials receive the same current object.
+        s.uniforms.reflectionParams = { value: reflectionState.params };
         s.uniforms.sunColor        = { value: new Color(1.0, 0.98, 0.9) };
         s.uniforms.heightScale     = { value: heightScale };
         // Sun glitter reach/width multiplier — live-adjustable via
@@ -272,7 +278,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         // driven width below, since Simon wants width to track the sun's
         // apparent size automatically, with the slider just for fine
         // adjustment on top of that curve, not overriding it outright.
-        s.uniforms.glitterReach    = { value: new Vector2(GLITTER_ALONG_FAR, 1.0) };
+        s.uniforms.glitterReach    = { value: reflectionState.glitterReach };
         // Smoothed sun height, normalised 0 (lowest/biggest sun) .. 1
         // (highest/smallest) — drives the glitter width's automatic scaling.
         // Pushed live each frame in TerrainGenerator.update().
@@ -285,7 +291,7 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
         // metalness to fully non-reflective, so Three's built-in specular
         // can't contribute anything either. What you see with this on is
         // ONLY calculateSunGlitter()'s actual output — nothing else.
-        s.uniforms.debugShowGlitter = { value: 0 };
+        s.uniforms.debugShowGlitter = { value: reflectionState.debugShowGlitter ? 1 : 0 };
         // Was never actually declared in the GLSL below despite TerrainGenerator.
         // update() pushing a value into shader.uniforms.time every frame — the JS
         // object had it, but with no matching `uniform float time;` in the source,

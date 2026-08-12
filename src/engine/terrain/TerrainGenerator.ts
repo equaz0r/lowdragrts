@@ -19,6 +19,7 @@ import { ReflectionControls } from '../ui/ReflectionControls';
 import { LightingSystem } from './LightingSystem';
 import { BufferPool } from '../utils/BufferPool';
 import { Rng } from '../../sim/core/Rng';
+import { createTerrainReflectionState, TerrainReflectionState } from '../config/ReflectionState';
 
 export interface TerrainConfig {
     heightScale:   number;
@@ -135,6 +136,7 @@ export class TerrainGenerator {
     private edgeUniforms: EdgeUniforms | null = null;
     private geometry: BufferGeometry | null = null;
     private reflectionControls: ReflectionControls;
+    private reflectionState: TerrainReflectionState;
     private heightMap: HeightMap | null = null;
     private plateauSites: PlateauSite[] = [];
     private regenerateListeners: Set<() => void> = new Set();
@@ -152,18 +154,8 @@ export class TerrainGenerator {
         this.bufferPool = BufferPool.getInstance();
         this.currentBuffers = { vertex: null, color: null, uv: null, index: null, height: null };
 
-        this.reflectionControls = new ReflectionControls((params) => {
-            const shader = (this.material as any)?.customShader;
-            if (shader?.uniforms) {
-                shader.uniforms.reflectionParams.value.copy(params);
-                if (this.material) this.material.needsUpdate = true;
-            }
-        }, lightingSystem, (reach, width) => {
-            const shader = (this.material as any)?.customShader;
-            if (shader?.uniforms?.glitterReach) {
-                shader.uniforms.glitterReach.value.set(reach, width);
-            }
-        }, (show) => {
+        this.reflectionState = createTerrainReflectionState();
+        this.reflectionControls = new ReflectionControls(this.reflectionState, lightingSystem, (show) => {
             const shader = (this.material as any)?.customShader;
             if (shader?.uniforms?.debugShowGlitter) {
                 shader.uniforms.debugShowGlitter.value = show ? 1 : 0;
@@ -400,7 +392,11 @@ export class TerrainGenerator {
         if (this.currentBuffers.index)  this.geometry.setIndex(new BufferAttribute(this.currentBuffers.index, 1));
         this.geometry.computeVertexNormals();
 
-        const mesh = new Mesh(this.geometry, createTerrainMaterial(totalSize, this.config.heightScale));
+        const mesh = new Mesh(this.geometry, createTerrainMaterial(
+            totalSize,
+            this.config.heightScale,
+            this.reflectionState,
+        ));
 
         // Terrain grid — colour ramp + pulse handled entirely in EdgeMaterial shader.
         // Geometry comes from TerrainGrid (logical cells), NOT EdgesGeometry — see
@@ -469,8 +465,8 @@ export class TerrainGenerator {
         return this.edgeUniforms;
     }
 
-    /** The reflection/sun panel — owned here since it's constructed here (its
-     *  onUpdate callback closes over this.material). Exposed for SettingsIO. */
+    /** The reflection/sun panel — owned here alongside the shared reflection
+     *  state used by every regenerated material. Exposed for SettingsIO. */
     public getReflectionControls(): ReflectionControls {
         return this.reflectionControls;
     }

@@ -505,7 +505,7 @@ export class LightingSystem {
         // reaches the DirectionalLight each frame (updateSunIntensity() sets
         // sunLight.intensity too, earlier in this same call chain, but this
         // line overwrites it). Sun disc/halo brightness elsewhere are untouched.
-        this.sunLight.intensity = LightingParameters.SUN_BASE_INTENSITY * heightFactor * LightingParameters.SUN_TERRAIN_LIGHT_SCALE;
+        this.sunLight.intensity = this.currentSunIntensity * heightFactor * LightingParameters.SUN_TERRAIN_LIGHT_SCALE;
         
         // Calculate ambient intensity using the defined range
         const [minAmbient, maxAmbient] = LightingParameters.AMBIENT_INTENSITY_RANGE;
@@ -591,6 +591,12 @@ export class LightingSystem {
         this.targetSunIntensity = intensity;
     }
 
+    /** Configured intensity target, before smoothing. Used by controls and
+     * settings export so save files contain the live value, not a constant. */
+    public getTargetSunIntensity(): number {
+        return this.targetSunIntensity;
+    }
+
     private updateSunIntensity(): void {
         // Smooth interpolation of sun intensity
         const smoothSpeed = 0.15;
@@ -649,4 +655,4 @@ export class LightingSystem {
         this.ambientLight.dispose();
         LightingSystem.instance = null;
     }
-} 
+}

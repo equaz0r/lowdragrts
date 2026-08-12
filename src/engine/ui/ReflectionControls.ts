@@ -1,6 +1,5 @@
-import { Vector4 } from 'three';
-import { ReflectionParameters } from '../config/LightingConfig';
 import { LightingParameters } from '../config/LightingConfig';
+import { TerrainReflectionState } from '../config/ReflectionState';
 import { LightingSystem } from '../terrain/LightingSystem';
 import { makeDraggable, DragHandle } from './Draggable';
 
@@ -23,29 +22,19 @@ export interface ReflectionSettings {
 
 export class ReflectionControls {
     private container: HTMLDivElement;
-    private onUpdate: (params: Vector4) => void;
-    private onGlitterUpdate: (reach: number, width: number) => void;
     private onDebugGlitterToggle: (show: boolean) => void;
-    private currentParams: Vector4;
-    // Reach default matches GLITTER_ALONG_FAR's initial uniform value in
-    // TerrainMaterial.ts. Width is now a MULTIPLIER (1.0 = the auto sun-
-    // height-driven curve as designed) — see ReflectionSettings above.
-    private currentGlitterReach = 2500;
-    private currentGlitterWidth = 1.0;
+    private state: TerrainReflectionState;
     private lightingSystem: LightingSystem;
     private dragHandle: DragHandle | null = null;
 
     constructor(
-        onUpdate: (params: Vector4) => void,
+        state: TerrainReflectionState,
         lightingSystem: LightingSystem,
-        onGlitterUpdate: (reach: number, width: number) => void = () => {},
         onDebugGlitterToggle: (show: boolean) => void = () => {},
     ) {
-        this.onUpdate = onUpdate;
-        this.onGlitterUpdate = onGlitterUpdate;
+        this.state = state;
         this.onDebugGlitterToggle = onDebugGlitterToggle;
         this.lightingSystem = lightingSystem;
-        this.currentParams = ReflectionParameters.REFLECTION_PARAMS.clone();
 
         this.container = document.createElement('div');
         this.container.style.position = 'absolute';
@@ -151,34 +140,30 @@ export class ReflectionControls {
 
     private createControls(): void {
         // Metalness control
-        this.createSlider('Metalness', 0, 1, this.currentParams.x, 0.01, (value) => {
-            this.currentParams.x = value;
-            this.onUpdate(this.currentParams);
+        this.createSlider('Metalness', 0, 1, this.state.params.x, 0.01, (value) => {
+            this.state.params.x = value;
         }, 'Controls how metallic the surface appears');
 
         // Roughness control
-        this.createSlider('Roughness', 0, 1, this.currentParams.y, 0.01, (value) => {
-            this.currentParams.y = value;
-            this.onUpdate(this.currentParams);
+        this.createSlider('Roughness', 0, 1, this.state.params.y, 0.01, (value) => {
+            this.state.params.y = value;
         }, 'Controls how rough or smooth the surface appears');
 
         // Position factor control — min is 0.1, not 0: this value is smoothstep's
         // edge1 in TerrainMaterial.ts and edge0==edge1 is undefined GLSL behaviour
         // (produced a NaN/white blowout bug at exactly 0). Shader has its own floor
         // too, but keeping the slider clear of it is the simpler guarantee.
-        this.createSlider('Position Factor', 0.1, 5, this.currentParams.z, 0.1, (value) => {
-            this.currentParams.z = value;
-            this.onUpdate(this.currentParams);
+        this.createSlider('Position Factor', 0.1, 5, this.state.params.z, 0.1, (value) => {
+            this.state.params.z = value;
         }, 'Controls how reflection strength varies with terrain position');
 
         // Reflection power control
-        this.createSlider('Reflection Power', 0, 2, this.currentParams.w, 0.1, (value) => {
-            this.currentParams.w = value;
-            this.onUpdate(this.currentParams);
+        this.createSlider('Reflection Power', 0, 2, this.state.params.w, 0.1, (value) => {
+            this.state.params.w = value;
         }, 'Controls the overall intensity of reflections');
 
         // Sun intensity control
-        this.createSlider('Sun Intensity', 0.3, 2, LightingParameters.SUN_BASE_INTENSITY, 0.05, (value) => {
+        this.createSlider('Sun Intensity', 0.3, 2, this.lightingSystem.getTargetSunIntensity(), 0.05, (value) => {
             if (this.lightingSystem) {
                 this.lightingSystem.setSunIntensity(value);
             }
@@ -228,9 +213,8 @@ export class ReflectionControls {
         // relates to the 8000-unit map. Range extended 6000->12000 (12 Aug
         // 2026, round 17) — Simon wanted to push past the old max, especially
         // for high-sun (small, distant-feeling) scenes.
-        this.createSlider('Glitter Reach', 500, 12000, this.currentGlitterReach, 50, (value) => {
-            this.currentGlitterReach = value;
-            this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
+        this.createSlider('Glitter Reach', 500, 12000, this.state.glitterReach.x, 50, (value) => {
+            this.state.glitterReach.x = value;
         }, 'World-unit distance for the sun glitter wedge to reach full width — smaller = fills the visible screen sooner');
 
         // Width is now a MULTIPLIER (round 17), not an absolute world-unit
@@ -238,9 +222,8 @@ export class ReflectionControls {
         // (see GLITTER_WIDTH_AUTO_MIN/MAX/CURVE_POWER in TerrainMaterial.ts).
         // 1.0 = that curve as designed; use this to nudge the whole curve up
         // or down without fighting the automatic sun-height linkage.
-        this.createSlider('Glitter Width ×', 0.2, 3.0, this.currentGlitterWidth, 0.05, (value) => {
-            this.currentGlitterWidth = value;
-            this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
+        this.createSlider('Glitter Width ×', 0.2, 3.0, this.state.glitterReach.y, 0.05, (value) => {
+            this.state.glitterReach.y = value;
         }, 'Multiplier on the glitter wedge\'s auto sun-height-driven width — 1.0 = the automatic curve as designed, higher/lower scales it');
 
         // Debug isolation toggle (11 Aug 2026, round 10) — after several
@@ -251,7 +234,8 @@ export class ReflectionControls {
         // non-reflective so nothing else can contribute. Not part of
         // ReflectionSettings — deliberately not saved/exported, it's a
         // debugging aid, not a scene setting.
-        this.createCheckbox('Debug: Glitter Only', false, (checked) => {
+        this.createCheckbox('Debug: Glitter Only', this.state.debugShowGlitter, (checked) => {
+            this.state.debugShowGlitter = checked;
             this.onDebugGlitterToggle(checked);
         }, 'Shows ONLY calculateSunGlitter()\'s raw output as greyscale — nothing else (no ambient shine, no Three.js built-in specular) can contribute while this is on');
     }
@@ -290,33 +274,37 @@ export class ReflectionControls {
 
     public exportSettings(): ReflectionSettings {
         return {
-            metalness: this.currentParams.x,
-            roughness: this.currentParams.y,
-            positionFactor: this.currentParams.z,
-            reflectionPower: this.currentParams.w,
-            sunIntensity: LightingParameters.SUN_BASE_INTENSITY,
+            metalness: this.state.params.x,
+            roughness: this.state.params.y,
+            positionFactor: this.state.params.z,
+            reflectionPower: this.state.params.w,
+            sunIntensity: this.lightingSystem.getTargetSunIntensity(),
             sunHeight: this.lightingSystem.getTargetSunHeight(),
-            glitterReach: this.currentGlitterReach,
-            glitterWidth: this.currentGlitterWidth,
+            glitterReach: this.state.glitterReach.x,
+            glitterWidth: this.state.glitterReach.y,
         };
     }
 
     public importSettings(data: ReflectionSettings): void {
-        this.currentParams.set(data.metalness, data.roughness, data.positionFactor, data.reflectionPower);
-        this.onUpdate(this.currentParams);
-        this.lightingSystem.setSunIntensity(data.sunIntensity);
-        this.lightingSystem.setSunHeight(data.sunHeight);
+        this.state.params.set(data.metalness, data.roughness, data.positionFactor, data.reflectionPower);
+        // Be tolerant of older/partial exports. Missing lighting fields retain
+        // the current scene rather than feeding `undefined` into smoothing.
+        if (typeof data.sunIntensity === 'number') {
+            this.lightingSystem.setSunIntensity(data.sunIntensity);
+        }
+        if (typeof data.sunHeight === 'number') {
+            this.lightingSystem.setSunHeight(data.sunHeight);
+        }
         // Older exports won't have these two fields — fall back to the
         // current (already-sane) defaults rather than importing `undefined`.
-        this.currentGlitterReach = data.glitterReach ?? this.currentGlitterReach;
+        this.state.glitterReach.x = data.glitterReach ?? this.state.glitterReach.x;
         // glitterWidth's MEANING changed 12 Aug 2026 (round 17): was an
         // absolute world-unit width (200-3000), now a 0.2-3.0 multiplier.
         // An export from before that change would still have a value in the
         // old range (e.g. 1200), which as a multiplier would blow the width
         // curve out completely — clamp into the current slider's range so an
         // old save degrades to "very wide" rather than something broken.
-        this.currentGlitterWidth = Math.min(3.0, Math.max(0.2, data.glitterWidth ?? this.currentGlitterWidth));
-        this.onGlitterUpdate(this.currentGlitterReach, this.currentGlitterWidth);
+        this.state.glitterReach.y = Math.min(3.0, Math.max(0.2, data.glitterWidth ?? this.state.glitterReach.y));
         this.renderAll(); // refresh sliders to match
     }
 
