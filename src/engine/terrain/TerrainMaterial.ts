@@ -97,6 +97,27 @@ const GLITTER_SHARD_SIZE = GridParameters.CELL_SIZE; // world units — same pan
 // distance-to-nearest-edge check rather than copying that function's exact
 // (slightly odd) formula.
 const GLITTER_SHARD_SEAM = 0.06;
+// How much of the glint's colour is EMISSIVE (self-glowing, bypasses scene
+// lighting entirely) vs. lit reflectionColor mixed into diffuseColor
+// (Round 16, 12 Aug 2026) — MeshStandardMaterial is a LIT material:
+// diffuseColor is just the albedo INPUT, still multiplied by the scene's
+// actual light level (ambient + sunLight) before reaching the screen. With
+// Sun Height at its low end (heightFactor clamps to a 0.3 floor — see
+// LightingSystem.ts), BOTH lights are dim enough that even a fully-correct,
+// bright glint value was getting crushed to near-invisible — Simon saw
+// literally nothing with debug off, at any slider setting, because the
+// slider changes were all happening in diffuseColor/roughness/metalness,
+// none of which matter if there's barely any light to reflect in the first
+// place. A "glint" conceptually IS light already bouncing toward the
+// camera — it shouldn't need the SCENE's ambient light to be visible any
+// more than the sun disc or the neon grid pulse do (both already
+// effectively self-lit). Fix: add reflectionColor to totalEmissiveRadiance
+// (Three's standard emissive slot — bypasses the lit diffuse/specular BRDF
+// pipeline entirely, added straight to the final output), so the glint is
+// reliably visible regardless of scene brightness. diffuseColor mixing
+// stays too (harmless, adds a bit of properly-lit richness when there IS
+// enough ambient/sun light) — this is additive on top, not a replacement.
+const GLINT_EMISSIVE_INTENSITY = 1.0;
 // Wedge envelope: WIDTH_NEAR/WIDTH_FAR are world-unit half-widths of the
 // glitter band at ALONG_NEAR/ALONG_FAR (world-unit distances from the camera
 // along the camera->sun ground axis — NOT distance to the sun itself, which
@@ -411,6 +432,22 @@ export function createTerrainMaterial(totalSize: number, heightScale: number): M
             float reflectionStrength = calculateReflection();
             vec3 reflectionColor = sunColor * reflectionStrength;
             diffuseColor.rgb = mix(diffuseColor.rgb, reflectionColor, reflectionStrength * ${ReflectionParameters.REFLECTION_BLEND.toFixed(1)});`
+        );
+
+        // Emissive contribution — see GLINT_EMISSIVE_INTENSITY above for why
+        // this needs to exist at all (diffuseColor alone is scene-light-
+        // dependent and was invisible with the sun low). totalEmissiveRadiance
+        // is Three's own variable (declared just before this chunk runs,
+        // `vec3 totalEmissiveRadiance = emissive;`) — adding to it here is
+        // the standard, correct way to contribute a self-lit glow; it's
+        // added straight into the final output (outgoingLight), completely
+        // bypassing the lit diffuse/specular BRDF pipeline. reflectionColor
+        // is still in scope here — same main() function body, declared
+        // earlier in the color_fragment chunk above.
+        s.fragmentShader = s.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+            totalEmissiveRadiance += reflectionColor * ${GLINT_EMISSIVE_INTENSITY.toFixed(2)};`
         );
 
         s.fragmentShader = s.fragmentShader.replace(
